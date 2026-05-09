@@ -15,9 +15,8 @@ export default function GuestLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="scroll-smooth">
+    <html lang="en" className="scroll-smooth dark" style={{ colorScheme: 'dark' }}>
       <body className={`${inter.className} bg-neutral-950 text-white antialiased selection:bg-white/10`}>
-        {/* 🚀 Toaster ko yahan rakha hai taaki ye har page par kaam kare */}
         <Toaster position="top-right" richColors expand={true} />
         {children}
       </body>
