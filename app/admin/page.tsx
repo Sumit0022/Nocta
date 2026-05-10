@@ -9,9 +9,12 @@ import {
   Users, CheckCircle2, IndianRupee, MessageCircle, Plus, 
   Loader2, X, Edit, Eye, AlertCircle, Trash2, Search, 
   ArrowLeft, Printer, Settings, UploadCloud, Sparkles,
-  LogOut, Ticket 
+  LogOut, Ticket, ScanLine
 } from "lucide-react";
-import { jsPDF } from "jspdf"; // 🚀 PDF Library
+import { jsPDF } from "jspdf";
+import { QRCodeSVG } from "qrcode.react"; 
+import { toPng } from "html-to-image"; 
+import { Scanner } from "@yudiel/react-qr-scanner"; 
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -37,6 +40,11 @@ export default function AdminDashboard() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [formData, setFormData] = useState({ _id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending" });
 
+  // 🚀 VIP PASS & SCANNER STATES
+  const [downloadingGuest, setDownloadingGuest] = useState<any>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannedResult, setScannedResult] = useState<any>(null);
+
   // --- DATA FETCHING ---
   const fetchGuests = async () => {
     setLoading(true);
@@ -48,7 +56,6 @@ export default function AdminDashboard() {
       }
       const result = await res.json();
       
-      // 🚀 THE FIX: Safely extracting the array from Firebase response
       if (result.success) {
         const fetchedList = result.guests || result.data || [];
         setGuests(Array.isArray(fetchedList) ? fetchedList : []);
@@ -59,7 +66,7 @@ export default function AdminDashboard() {
     } catch (error) { 
       console.error("Fetch guests failed:", error); 
       toast.error("Error loading guest list");
-      setGuests([]); // Safe fallback on error
+      setGuests([]); 
     } 
     finally { setLoading(false); }
   };
@@ -187,7 +194,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // WhatsApp Automation
   const openWhatsApp = (guest: any) => {
     let message = `Hello ${guest.firstName}!`;
 
@@ -205,118 +211,71 @@ export default function AdminDashboard() {
     window.open(`https://wa.me/91${guest.mobileNumber}?text=${encodedMessage}`, '_blank');
   };
 
-  // 🚀 FANCY NEON PARTY STYLE VIP PASS GENERATOR
+  // 🚀 HIGH-END CONCERT VIP PASS GENERATOR
   const downloadVIPPass = (guest: any) => {
-    try {
-      // Landscape ticket size: 160mm x 60mm
-      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: [160, 60] });
-      
-      // --- BACKGROUND ---
-      doc.setFillColor(15, 10, 25); // Deep purple-black background
-      doc.rect(0, 0, 160, 60, "F");
+    setDownloadingGuest(guest); // Hidden div ko activate karega
+    const toastId = toast.loading("Generating Concert-Style VIP Pass...");
 
-      // --- NEON BORDERS ---
-      doc.setFillColor(255, 0, 127); // Neon Pink Top & Bottom
-      doc.rect(0, 0, 160, 2, "F");
-      doc.rect(0, 58, 160, 2, "F");
+    setTimeout(async () => {
+      try {
+        const ticketElement = document.getElementById("admin-concert-ticket-export");
+        if (!ticketElement) throw new Error("Ticket element not rendered");
 
-      doc.setFillColor(0, 255, 255); // Neon Cyan Left & Right
-      doc.rect(0, 0, 2, 60, "F");
-      doc.rect(158, 0, 2, 60, "F");
+        const eleWidth = ticketElement.scrollWidth;
+        const eleHeight = ticketElement.scrollHeight;
 
-      // --- BACKGROUND WATERMARK ---
-      doc.setTextColor(30, 20, 45); // Very dark purple
-      doc.setFontSize(80);
-      doc.setFont("helvetica", "bold");
-      doc.text("VIP", 15, 48, { angle: 10 });
+        const dataUrl = await toPng(ticketElement, { 
+          backgroundColor: "#0a0a0a", 
+          pixelRatio: 2, 
+          cacheBust: true, 
+          width: eleWidth, 
+          height: eleHeight 
+        });
 
-      // --- LEFT SECTION (EVENT DETAILS) ---
-      // Main Title
-      doc.setTextColor(0, 255, 255); // Cyan
-      doc.setFontSize(22);
-      doc.setFont("helvetica", "bold");
-      const title = settings.mainTitle || "EPIC NIGHTCLUB PARTY";
-      doc.text(title.toUpperCase(), 10, 16);
-
-      // Sub-headline
-      doc.setTextColor(200, 200, 200);
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "italic");
-      doc.text(settings.mainHeadline || "The most exclusive event of the year", 10, 22);
-
-      // Guest Info Box
-      doc.setFillColor(25, 20, 35); // Slightly lighter purple box
-      doc.setDrawColor(255, 0, 127); // Pink border
-      doc.setLineWidth(0.5);
-      doc.rect(10, 28, 95, 18, "FD"); // Fill & Draw
-
-      doc.setTextColor(150, 150, 150);
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "normal");
-      doc.text("EXCLUSIVELY FOR:", 14, 34);
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(16);
-      doc.setFont("helvetica", "bold");
-      doc.text(`${guest.firstName.toUpperCase()} ${guest.lastName.toUpperCase()}`, 14, 42);
-
-      // Date, Time & Venue
-      doc.setTextColor(180, 180, 180);
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "bold");
-      doc.text(`DATE: ${settings.eventDate || "TBA"}  |  TIME: ${settings.eventTime || "TBA"}`, 10, 53);
-      doc.text(`VENUE: ${settings.eventVenue || "TBA"}`, 10, 57);
-
-      // --- PERFORATED LINE (SEPARATOR) ---
-      doc.setDrawColor(80, 80, 80);
-      doc.setLineDashPattern([2, 2], 0);
-      doc.line(115, 5, 115, 55);
-      doc.setLineDashPattern([], 0); // reset dash
-
-      // --- RIGHT SECTION (TICKET TEAR-OFF) ---
-      doc.setTextColor(255, 0, 127); // Pink
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("ADMIT ONE", 137, 16, { align: "center" });
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "normal");
-      doc.text("ENTRY CODE", 137, 24, { align: "center" });
-
-      // Highlight Box for Code
-      doc.setFillColor(0, 255, 255); // Cyan background
-      doc.rect(120, 26, 34, 10, "F");
-      
-      doc.setTextColor(0, 0, 0); // Black Text
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text(guest.entryCode || "N/A", 137, 33, { align: "center" });
-
-      // Simulated Barcode
-      doc.setFillColor(255, 255, 255); // White lines
-      const barcodeStartX = 120;
-      let currentX = barcodeStartX;
-      const pattern = [1, 0.5, 2, 1, 0.5, 1.5, 3, 0.5, 1, 2, 0.5, 1.5, 1, 2];
-      for (let i = 0; i < pattern.length; i++) {
-        doc.rect(currentX, 40, pattern[i], 12, "F");
-        currentX += pattern[i] + 0.8; 
+        // Landscape mode PDF (size matches the 800x300 div perfectly)
+        const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [eleWidth, eleHeight] });
+        pdf.addImage(dataUrl, "PNG", 0, 0, eleWidth, eleHeight);
+        
+        pdf.save(`${guest.firstName}_Concert_Pass.pdf`);
+        toast.success("Party Pass Downloaded! Attach it in WhatsApp. 🎉", { id: toastId });
+      } catch (error) {
+        toast.error("Failed to generate pass", { id: toastId });
+        console.error(error);
+      } finally {
+        setDownloadingGuest(null);
       }
+    }, 500); 
+  };
 
-      doc.setTextColor(100, 100, 100);
-      doc.setFontSize(6);
-      doc.text("SCAN AT GATE", 137, 55, { align: "center" });
-
-      // Save PDF
-      doc.save(`VIP_Pass_${guest.firstName}.pdf`);
-      toast.success("Party Pass Downloaded! Attach it in WhatsApp.");
-    } catch (error) {
-      toast.error("Failed to generate pass");
-      console.error(error);
+  // 🚀 SCANNER LOGIC
+  const handleScan = (result: any) => {
+    const text = Array.isArray(result) ? result[0].rawValue : result;
+    if (!text) return;
+    
+    const foundGuest = guests.find(g => g.entryCode === text);
+    if (foundGuest) {
+      setScannedResult(foundGuest);
+    } else {
+      setScannedResult({ error: true, code: text });
     }
   };
 
-  // --- LOGIC & FILTERING ---
+  const markCheckedIn = async (guest: any) => {
+    const toastId = toast.loading("Checking in guest...");
+    const res = await fetch('/api/admin/guests/edit', { 
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ ...guest, rsvpStatus: 'Checked-In' }) 
+    });
+    if (res.ok) {
+      toast.success(`${guest.firstName} is Checked-In successfully!`, { id: toastId });
+      setScannedResult(null); 
+      setIsScannerOpen(false); 
+      fetchGuests();
+    } else {
+      toast.error("Failed to check-in", { id: toastId });
+    }
+  };
+
   // --- LOGIC & FILTERING ---
   const filteredGuests = useMemo(() => {
     let list = Array.isArray(guests) ? [...guests] : [];
@@ -327,12 +286,10 @@ export default function AdminDashboard() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase().trim();
       list = list.filter(g => {
-        // Sab kuch lowercase aur string mein convert kar rahe hain taaki match aasan ho
         const fullName = `${g.firstName || ""} ${g.lastName || ""}`.toLowerCase();
         const entryCode = (g.entryCode || "").toLowerCase();
         const phone = String(g.mobileNumber || "").toLowerCase();
 
-        // Agar query kisi bhi cheez se match karti hai, toh guest ko list mein dikhao
         return fullName.includes(query) || 
                entryCode.includes(query) || 
                phone.includes(query);
@@ -340,7 +297,8 @@ export default function AdminDashboard() {
     }
     return list;
   }, [guests, view, searchQuery]);
-  const revenueReceived = guests.filter(g => g.rsvpStatus === "Confirmed").reduce((sum, g) => sum + (g.amount || 0), 0);
+
+  const revenueReceived = guests.filter(g => g.rsvpStatus === "Confirmed" || g.rsvpStatus === "Checked-In").reduce((sum, g) => sum + (g.amount || 0), 0);
 
   const stats = [
     { label: "Total Guests", value: guests.length, target: "Overview", icon: Users, color: "text-blue-400", bg: "bg-blue-500/20" },
@@ -395,6 +353,12 @@ export default function AdminDashboard() {
                 <Printer className="w-4 h-4" /> Export Data
               </button>
             )}
+
+            {/* 🚀 NEW: SCANNER BUTTON */}
+            <button onClick={() => setIsScannerOpen(true)} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 shadow-[0_0_15px_rgba(251,191,36,0.15)] transition-all">
+              <ScanLine className="w-4 h-4" /> Scan Pass
+            </button>
+
             <button onClick={() => setView("Settings")} className="p-2 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors" title="Settings">
               <Settings className="w-5 h-5 text-neutral-400" />
             </button>
@@ -544,6 +508,7 @@ export default function AdminDashboard() {
                         <td className="p-4">
                           <span className={`print-badge px-2 py-1 rounded text-[10px] border whitespace-nowrap
                             ${guest.rsvpStatus === 'Confirmed' ? 'text-green-400 border-green-500/20 bg-green-500/5' : 
+                              guest.rsvpStatus === 'Checked-In' ? 'text-purple-400 border-purple-500/40 bg-purple-500/10 font-bold tracking-widest uppercase' :
                               guest.rsvpStatus === 'Need Verification' ? 'text-blue-400 border-blue-500/20 bg-blue-500/10 animate-pulse' :
                               guest.rsvpStatus === 'Failed' ? 'text-red-400 border-red-500/20 bg-red-500/5' :
                               'text-amber-400 border-amber-500/20 bg-amber-500/5'}`}>
@@ -559,7 +524,7 @@ export default function AdminDashboard() {
                            <button onClick={() => openWhatsApp(guest)} className="text-neutral-400 hover:text-green-400" title="Send WhatsApp Update"><MessageCircle className="w-5 h-5"/></button>
                            
                            {/* 🚀 FANCY VIP PASS BUTTON */}
-                           {guest.rsvpStatus === 'Confirmed' && (
+                           {(guest.rsvpStatus === 'Confirmed' || guest.rsvpStatus === 'Checked-In') && (
                              <button onClick={() => downloadVIPPass(guest)} className="text-amber-400 hover:text-amber-300" title="Download VIP Pass"><Ticket className="w-5 h-5"/></button>
                            )}
 
@@ -579,6 +544,60 @@ export default function AdminDashboard() {
       {/* --- ALL MODALS --- */}
       <AnimatePresence>
         
+        {/* 🚀 QR SCANNER MODAL */}
+        {isScannerOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md no-print">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="z-10 w-full max-w-md bg-neutral-900 border border-white/10 rounded-3xl overflow-hidden relative shadow-2xl shadow-amber-500/10">
+              <button onClick={() => { setIsScannerOpen(false); setScannedResult(null); }} className="absolute top-4 right-4 z-20 p-2 bg-black/50 hover:bg-white/10 rounded-full text-white transition-all"><X className="w-5 h-5"/></button>
+
+              {!scannedResult ? (
+                <div className="p-6">
+                  <h2 className="text-2xl text-center text-white font-light tracking-wide mb-6">Scan Entry Pass</h2>
+                  <div className="rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(251,191,36,0.15)] relative">
+                    <Scanner onScan={handleScan} />
+                  </div>
+                  <p className="text-center text-neutral-500 text-sm mt-4 animate-pulse">Position QR Code within the frame...</p>
+                </div>
+              ) : (
+                <div className="p-8 text-center bg-gradient-to-b from-neutral-900 to-black">
+                  {scannedResult.error ? (
+                    <div>
+                      <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+                        <X className="w-10 h-10 text-red-500"/>
+                      </div>
+                      <h2 className="text-2xl text-white font-bold">Invalid Pass</h2>
+                      <p className="text-red-400 font-mono mt-2">{scannedResult.code}</p>
+                      <p className="text-neutral-400 mt-2 text-sm">This code does not exist in the database.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20">
+                        <CheckCircle2 className="w-10 h-10 text-green-500"/>
+                      </div>
+                      <h2 className="text-3xl text-white font-bold capitalize">{scannedResult.firstName} {scannedResult.lastName}</h2>
+                      <div className="bg-white/5 py-2 px-4 rounded-lg inline-block mt-3 border border-white/10">
+                        <p className="text-amber-400 font-mono tracking-widest text-lg font-bold">{scannedResult.entryCode}</p>
+                      </div>
+                      <p className={`mt-4 uppercase tracking-widest text-xs font-bold ${scannedResult.rsvpStatus === 'Confirmed' ? 'text-green-400' : scannedResult.rsvpStatus === 'Checked-In' ? 'text-purple-400' : 'text-red-400'}`}>
+                        Status: {scannedResult.rsvpStatus}
+                      </p>
+
+                      {scannedResult.rsvpStatus !== 'Checked-In' && (
+                        <button onClick={() => markCheckedIn(scannedResult)} className="mt-8 w-full py-4 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-all active:scale-95 text-lg">
+                          Mark as Checked-In
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <button onClick={() => setScannedResult(null)} className="mt-6 text-neutral-400 hover:text-white transition-colors uppercase tracking-widest text-xs">
+                    Scan Another Pass
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+
         {/* ADD/EDIT MODAL */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
@@ -604,6 +623,7 @@ export default function AdminDashboard() {
                         <option value="Pending">Pending</option>
                         <option value="Need Verification">Need Verification</option>
                         <option value="Confirmed">Confirmed</option>
+                        <option value="Checked-In">Checked-In</option>
                         <option value="Failed">Failed</option>
                       </select>
                     </div>
@@ -642,6 +662,53 @@ export default function AdminDashboard() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* 🚀 HIDDEN HD CONCERT TICKET FOR EXPORT */}
+      <div className="fixed -top-[9999px] -left-[9999px] no-print">
+        {downloadingGuest && (
+          <div id="admin-concert-ticket-export" className="flex w-[800px] h-[300px] bg-neutral-950 text-white font-sans overflow-hidden border border-amber-500/30 rounded-xl relative shadow-2xl">
+            {/* Background Glow */}
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-black to-black opacity-80"></div>
+            
+            {/* Left Side: Event & Guest Info */}
+            <div className="w-[580px] p-8 flex flex-col justify-between relative z-10 border-r-2 border-dashed border-neutral-700">
+               <div>
+                  <h3 className="text-amber-500 tracking-[0.3em] uppercase text-xs font-bold mb-2">VIP ADMISSION</h3>
+                  <h1 className="text-4xl font-black uppercase tracking-wider text-white drop-shadow-md">{settings.mainTitle || "THE INFINITY EVENT"}</h1>
+                  <p className="text-neutral-400 mt-1 text-lg italic font-serif">{settings.mainHeadline || "Exclusive Access Only"}</p>
+               </div>
+               <div>
+                  <p className="text-neutral-500 text-xs uppercase tracking-widest mb-1">Admit One</p>
+                  <h2 className="text-3xl font-bold uppercase tracking-wide text-white">{downloadingGuest.firstName} {downloadingGuest.lastName}</h2>
+               </div>
+               <div className="flex gap-10 border-t border-neutral-800 pt-5 mt-2">
+                  <div>
+                     <p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Date</p>
+                     <p className="font-bold text-white tracking-wide">{settings.eventDate || "TBA"}</p>
+                  </div>
+                  <div>
+                     <p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Time</p>
+                     <p className="font-bold text-white tracking-wide">{settings.eventTime || "TBA"}</p>
+                  </div>
+                  <div>
+                     <p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Venue</p>
+                     <p className="font-bold text-white tracking-wide truncate max-w-[150px]">{settings.eventVenue || "TBA"}</p>
+                  </div>
+               </div>
+            </div>
+
+            {/* Right Side: Tear-off Stub & QR */}
+            <div className="w-[220px] bg-amber-500/5 p-6 flex flex-col items-center justify-center relative z-10">
+               <p className="text-amber-500 text-sm font-bold tracking-[0.2em] mb-4 text-center">SCAN AT GATE</p>
+               <div className="bg-white p-2 rounded-xl mb-4 shadow-[0_0_15px_rgba(251,191,36,0.2)]">
+                  <QRCodeSVG value={downloadingGuest.entryCode || "N/A"} size={100} bgColor={"#ffffff"} fgColor={"#000000"} level={"H"} />
+               </div>
+               <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1 text-center">Entry Code</p>
+               <p className="text-xl font-mono font-bold text-white tracking-[0.1em] text-center">{downloadingGuest.entryCode || "N/A"}</p>
+            </div>
+          </div>
+        )}
+      </div>
 
     </main>
   );
