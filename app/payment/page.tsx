@@ -74,11 +74,39 @@ export default function PaymentPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // 🚀 HD IMAGE COMPRESSOR (Targeting ~300-500KB for High Clarity)
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => setScreenshot(reader.result as string);
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+          
+          // Max size 1600px ensures text and transaction details are crystal clear
+          const MAX_SIZE = 1600;
+          if (width > height && width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          } else if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          // 85% Quality JPEG gives excellent clarity under Firebase 1MB limit
+          const compressedBase64 = canvas.toDataURL("image/jpeg", 0.85);
+          setScreenshot(compressedBase64);
+        };
+        img.src = reader.result as string;
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -92,8 +120,14 @@ export default function PaymentPage() {
         headers: { "Content-Type": "application/json" }, 
         body: JSON.stringify({ id: guestId, screenshot }),
       });
-      if (res.ok) router.push("/status"); 
+      if (res.ok) {
+        router.push("/status"); 
+      } else {
+        alert("Upload Failed. Firebase limitation error.");
+      }
     } catch (error) {
+      alert("Server Error.");
+    } finally {
       setLoading(false);
     }
   };
