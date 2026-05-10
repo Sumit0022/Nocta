@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
-import { toPng } from "html-to-image"; // 🚀 NAYI LIBRARY YAHAN AAYI HAI
+import { toPng } from "html-to-image"; 
 import { motion } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
 import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download } from "lucide-react";
@@ -42,7 +42,7 @@ export default function DashboardPage() {
     fetchAllData();
   }, []);
 
-  // 🚀 VIP PASS DOWNLOAD FUNCTION (Ab html-to-image use kar raha hai)
+  // 🚀 VIP PASS DOWNLOAD FUNCTION (A5 ki jagah Custom Exact Ticket Size)
   const downloadVIPPass = async () => {
     const ticketElement = document.getElementById("vip-pass-card");
     if (!ticketElement) {
@@ -55,22 +55,26 @@ export default function DashboardPage() {
     try {
       window.scrollTo(0, 0); 
 
-      // 🚀 html-to-image Tailwind v4 aur Oklab colors ko perfectly samajhta hai
+      // Ticket ki exact height aur width nikalna taaki kuch na kate
+      const eleWidth = ticketElement.scrollWidth;
+      const eleHeight = ticketElement.scrollHeight;
+
       const dataUrl = await toPng(ticketElement, { 
         backgroundColor: "#0a0a0a", 
-        pixelRatio: 2, // HD Quality
+        pixelRatio: 2, 
         cacheBust: true,
+        width: eleWidth,
+        height: eleHeight, // 🚀 Force full height capture
       });
 
-      const pdf = new jsPDF("p", "mm", "a5"); 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      
-      // Ticket ki height/width nikal kar PDF mein perfect fit karna
-      const eleWidth = ticketElement.offsetWidth;
-      const eleHeight = ticketElement.offsetHeight;
-      const pdfHeight = (eleHeight * pdfWidth) / eleWidth;
+      // 🚀 THE MAGIC: PDF ka page ab A5 nahi, balki exact ticket ke size ka hoga
+      const pdf = new jsPDF({
+        orientation: "p",
+        unit: "px",
+        format: [eleWidth, eleHeight]
+      });
 
-      pdf.addImage(dataUrl, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(dataUrl, "PNG", 0, 0, eleWidth, eleHeight);
       
       const fileName = guestName ? `${guestName.replace(/\s+/g, '_')}_Nocta_VIP_Pass.pdf` : "Nocta_VIP_Pass.pdf";
       pdf.save(fileName);
