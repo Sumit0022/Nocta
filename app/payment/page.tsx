@@ -18,15 +18,17 @@ export default function PaymentPage() {
   const [qrCode, setQrCode] = useState("");
 
   useEffect(() => {
-    // 1. Fetch Guest Details
+    // URL se details aur eventId nikalna
+    const params = new URLSearchParams(window.location.search);
+    const fName = params.get("firstName");
+    const lName = params.get("lastName");
+    const eId = params.get("eventId"); // 🚀 THE MAGIC: Event ID captured
+
+    // 1. Fetch Guest Details (with eventId for precision)
     const fetchGuestDetails = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const fName = params.get("firstName");
-      const lName = params.get("lastName");
-      
       if (fName && lName) {
         try {
-          const res = await fetch(`/api/guest/details?firstName=${fName}&lastName=${lName}`, { cache: "no-store" });
+          const res = await fetch(`/api/guest/details?firstName=${fName}&lastName=${lName}&eventId=${eId || ""}`, { cache: "no-store" });
           const result = await res.json();
           if (result.success && result.data) {
             setAmount(result.data.amount || 0);
@@ -38,14 +40,24 @@ export default function PaymentPage() {
       }
     };
 
-    // 2. Fetch Admin Payment Settings
+    // 2. Fetch Admin Payment Settings (Specific to the Event)
     const fetchSettings = async () => {
       try {
         const res = await fetch('/api/admin/settings', { cache: "no-store" });
         const result = await res.json();
-        if (result.success && result.data) {
-          setUpiId(result.data.upiId || "No UPI Set");
-          setQrCode(result.data.qrCode);
+        
+        // 🚀 THE MAGIC: Backend ab array return karta hai, toh hume specific event dhundhna hai
+        if (result.success && Array.isArray(result.data)) {
+          const currentEvent = result.data.find((e: any) => e.eventId === eId);
+          
+          if (currentEvent) {
+            setUpiId(currentEvent.upiId || "No UPI Set");
+            setQrCode(currentEvent.qrCode || "");
+          } else if (result.data.length > 0) {
+            // Agar somehow event nahi mila, toh fallback ke liye pehla wala dikha do
+            setUpiId(result.data[0].upiId || "No UPI Set");
+            setQrCode(result.data[0].qrCode || "");
+          }
         }
       } catch (e) {
         console.error("Fetch settings error", e);
@@ -76,7 +88,9 @@ export default function PaymentPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/guest/payment", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: guestId, screenshot }),
+        method: "POST", 
+        headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify({ id: guestId, screenshot }),
       });
       if (res.ok) router.push("/status"); 
     } catch (error) {

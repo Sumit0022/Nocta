@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { collection, getDocs } from "firebase/firestore/lite";
+import { collection, getDocs, query, where } from "firebase/firestore/lite";
 
 export async function POST(req: Request) {
   try {
-    const { firstName, lastName } = await req.json();
+    // 🚀 THE UPGRADE: Frontend se ab eventId bhi aayega
+    const { firstName, lastName, eventId } = await req.json();
 
     // 1. User ki input ko clean karo (spaces hatao aur chote letters mein badlo)
     const searchFirst = firstName.trim().toLowerCase();
     const searchLast = lastName.trim().toLowerCase();
 
-    // Saare guests uthao (VIP list choti hoti hai, toh ye ekdum fast hoga)
-    const querySnapshot = await getDocs(collection(db, "guests"));
+    // 🚀 THE MAGIC: Agar eventId hai, toh sirf usi party ke guests uthao (Database Optimization)
+    let guestsQuery = collection(db, "guests");
+    if (eventId) {
+      guestsQuery = query(collection(db, "guests"), where("eventId", "==", eventId)) as any;
+    }
+
+    const querySnapshot = await getDocs(guestsQuery);
 
     let matchedDoc = null;
 
@@ -21,6 +27,7 @@ export async function POST(req: Request) {
       const dbFirst = (data.firstName || "").trim().toLowerCase();
       const dbLast = (data.lastName || "").trim().toLowerCase();
 
+      // Naam aur Last Name dono match hone chahiye usi event list mein
       if (dbFirst === searchFirst && dbLast === searchLast) {
         matchedDoc = doc;
         break;
@@ -30,7 +37,7 @@ export async function POST(req: Request) {
     if (!matchedDoc) {
       // Error ke time bhi thoda delay taaki jhatka na lage
       await new Promise((resolve) => setTimeout(resolve, 600));
-      return NextResponse.json({ success: false, message: "Guest not found in VIP list" }, { status: 404 });
+      return NextResponse.json({ success: false, message: "Guest not found in this Event's VIP list" }, { status: 404 });
     }
 
     // 3. THE ANIMATION FIX 🎬: 0.8 second ka artificial delay taaki tera smooth animation play ho sake

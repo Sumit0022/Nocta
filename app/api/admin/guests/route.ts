@@ -1,12 +1,24 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { collection, getDocs } from "firebase/firestore/lite";
+import { collection, getDocs, query, where } from "firebase/firestore/lite";
 
 export const dynamic = "force-dynamic";
-export async function GET() {
+
+export async function GET(req: Request) {
   try {
-    // Firebase se saare guests utha rahe hain
-    const querySnapshot = await getDocs(collection(db, "guests"));
+    // 🚀 THE UPGRADE: URL se 'eventId' pakadna
+    const { searchParams } = new URL(req.url);
+    const eventId = searchParams.get("eventId"); 
+
+    let guestsQuery = collection(db, "guests");
+
+    // Agar Admin ne specifically kisi ek party (e.g., 8492) ke guests maange hain
+    if (eventId) {
+       guestsQuery = query(collection(db, "guests"), where("eventId", "==", eventId)) as any;
+    }
+
+    // Data Fetch karo (Ya toh saare guests, ya sirf specific party ke)
+    const querySnapshot = await getDocs(guestsQuery);
     
     const guests = querySnapshot.docs.map(doc => ({
       id: doc.id,

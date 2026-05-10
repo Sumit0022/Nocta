@@ -20,18 +20,30 @@ export default function DashboardPage() {
       const params = new URLSearchParams(window.location.search);
       const fName = params.get("firstName");
       const lName = params.get("lastName");
+      const eId = params.get("eventId"); // 🚀 THE MAGIC: URL se eventId pakda
       
       try {
         if (fName && lName) {
           setGuestName(`${fName} ${lName}`);
-          const guestRes = await fetch(`/api/guest/details?firstName=${fName}&lastName=${lName}`, { cache: "no-store" });
+          // 🚀 THE MAGIC: API call mein eventId add kar diya
+          const guestRes = await fetch(`/api/guest/details?firstName=${fName}&lastName=${lName}&eventId=${eId || ""}`, { cache: "no-store" });
           const guestResult = await guestRes.json();
           if (guestResult.success) setEntryCode(guestResult.data.entryCode || "N/A");
         }
 
         const settingsRes = await fetch('/api/admin/settings', { cache: "no-store" });
         const settingsResult = await settingsRes.json();
-        if (settingsResult.success) setEventDetails(settingsResult.data);
+        
+        // 🚀 THE MAGIC: Saari parties (array) mein se specific event dhundo
+        if (settingsResult.success && Array.isArray(settingsResult.data)) {
+          const currentEvent = settingsResult.data.find((e: any) => e.eventId === eId);
+          if (currentEvent) {
+            setEventDetails(currentEvent);
+          } else if (settingsResult.data.length > 0) {
+            // Agar id na mile toh fallback pehli party par
+            setEventDetails(settingsResult.data[0]);
+          }
+        }
 
       } catch (e) {
         console.error("Dashboard Error:", e);
@@ -76,7 +88,7 @@ export default function DashboardPage() {
 
       pdf.addImage(dataUrl, "PNG", 0, 0, eleWidth, eleHeight);
       
-      const fileName = guestName ? `${guestName.replace(/\s+/g, '_')}_Nocta_VIP_Pass.pdf` : "Nocta_VIP_Pass.pdf";
+      const fileName = guestName ? `${guestName.replace(/\s+/g, '_')}_Entry_Pass.pdf` : "Entry_Pass.pdf";
       pdf.save(fileName);
 
       toast.success("VIP Pass Downloaded Successfully! 🎉", { id: toastId });
@@ -98,21 +110,32 @@ export default function DashboardPage() {
               <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-amber-400" />
               <h1 className="text-2xl font-light tracking-wide">VIP PASS GRANTED</h1>
               <h2 className="text-lg font-medium mt-2 capitalize">{guestName}</h2>
+              {/* Event Title dikha do taaki premium lage */}
+              <p className="text-xs text-amber-400/80 mt-1 uppercase tracking-widest">{eventDetails?.mainTitle || ""}</p>
             </div>
 
             <div className="p-8 space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center gap-4 text-neutral-300">
                   <Calendar className="w-5 h-5 text-neutral-500" />
-                  <div><p className="text-xs text-neutral-500 uppercase">Date</p><p className="font-medium">{eventDetails?.eventDate || "Loading..."}</p></div>
+                  <div>
+                    <p className="text-xs text-neutral-500 uppercase">Date</p>
+                    <p className="font-medium">{eventDetails?.eventDate || "Loading..."}</p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-4 text-neutral-300">
                   <Clock className="w-5 h-5 text-neutral-500" />
-                  <div><p className="text-xs text-neutral-500 uppercase">Time</p><p className="font-medium">{eventDetails?.eventTime || "Loading..."}</p></div>
+                  <div>
+                    <p className="text-xs text-neutral-500 uppercase">Time</p>
+                    <p className="font-medium">{eventDetails?.eventTime || "Loading..."}</p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-4 text-neutral-300">
                   <MapPin className="w-5 h-5 text-neutral-500" />
-                  <div><p className="text-xs text-neutral-500 uppercase">Venue</p><p className="font-medium">{eventDetails?.eventVenue || "Loading..."}</p></div>
+                  <div>
+                    <p className="text-xs text-neutral-500 uppercase">Venue</p>
+                    <p className="font-medium">{eventDetails?.eventVenue || "Loading..."}</p>
+                  </div>
                 </div>
               </div>
 
