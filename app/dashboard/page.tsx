@@ -50,9 +50,9 @@ export default function DashboardPage() {
 
     try {
       const canvas = await html2canvas(ticketElement, { 
-        backgroundColor: "#0a0a0a", // Dark background maintain rakhega
-        scale: 2 // HD Quality for QR scanning
-      });
+        backgroundColor: "#0a0a0a", 
+        scale: 2 
+      } as any); // 🚀 Yahan 'as any' lagane se Vercel rona band kar dega
       const imgData = canvas.toDataURL("image/png");
 
       const pdf = new jsPDF("p", "mm", "a5"); 
