@@ -1,100 +1,108 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import EventDetails from "@/components/organisms/EventDetails";
-import { ChevronDown } from "lucide-react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Sparkles, Ticket, ShieldCheck, Zap } from "lucide-react";
 
-export default function GuestInvitationPage() {
-  const [settings, setSettings] = useState<any>(null);
-
-  // 🚀 ADMIN SETTINGS FETCH KARNA
-  useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const res = await fetch('/api/admin/settings', { cache: "no-store" });
-        const result = await res.json();
-        if (result.success && result.data) {
-          setSettings(result.data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch settings", error);
-      }
-    };
-    fetchSettings();
-  }, []);
+export default function LandingPage() {
+  const router = useRouter();
 
   return (
-    <main className="relative min-h-screen w-full flex flex-col items-center overflow-x-hidden">
+    <main className="min-h-screen w-full relative bg-neutral-950 text-white overflow-hidden selection:bg-amber-500/30 font-sans">
       
-      {/* --- HERO SECTION --- */}
-      <section className="relative h-screen w-full flex flex-col items-center justify-center text-center px-6">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-neutral-800/40 via-neutral-950 to-neutral-950 -z-10" />
+      {/* 🌌 BACKGROUND GLOW EFFECTS */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-900/20 via-neutral-950 to-black -z-10" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-amber-500/15 blur-[120px] rounded-full pointer-events-none -z-10 animate-pulse" />
 
-        <motion.p 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, delay: 0.5 }}
-          className="text-sm tracking-[0.3em] text-neutral-400 uppercase mb-6"
+      {/* 🧭 MINIMALIST NAVBAR */}
+      <nav className="w-full max-w-7xl mx-auto px-6 py-8 flex justify-between items-center z-50 relative">
+        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }}>
+          <h1 className="text-3xl font-black tracking-[0.3em] uppercase italic text-white drop-shadow-[0_0_15px_rgba(251,191,36,0.3)]">
+            NOCTA
+          </h1>
+        </motion.div>
+        <motion.button 
+          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }}
+          onClick={() => router.push('/admin/login')}
+          className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 hover:text-amber-400 transition-all font-black border border-transparent hover:border-amber-500/30 px-4 py-2 rounded-full"
         >
-          {/* 🚀 DYNAMIC TITLE */}
-          {settings?.mainTitle || "You are cordially invited"}
-        </motion.p>
+          Command Center
+        </motion.button>
+      </nav>
 
-        <motion.h1 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1.2, ease: "easeOut", delay: 0.2 }}
-          className="text-4xl md:text-6xl font-light tracking-tight mb-8 max-w-4xl whitespace-pre-line"
-        >
-          {/* 🚀 DYNAMIC HEADLINE */}
-          {settings?.mainHeadline || "A Private Gathering"}
-        </motion.h1>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1, delay: 1 }}
-          className="h-24 w-[1px] bg-gradient-to-b from-white/0 via-white/50 to-white/0 mb-8"
-        />
-
+      {/* 🚀 HERO SECTION */}
+      <div className="max-w-7xl mx-auto px-6 pt-16 pb-32 relative z-10 flex flex-col items-center justify-center min-h-[75vh] text-center">
         <motion.div 
-          initial={{ opacity: 0 }}
+          initial={{ opacity: 0 }} 
           animate={{ opacity: 1 }}
-          transition={{ duration: 1, delay: 1.5 }}
-          className="absolute bottom-12 flex flex-col items-center animate-bounce"
+          transition={{ staggerChildren: 0.2, delayChildren: 0.3 }}
+          className="max-w-4xl mx-auto flex flex-col items-center"
         >
-          <span className="text-xs tracking-widest text-neutral-500 mb-2">DISCOVER</span>
-          <ChevronDown className="text-neutral-500 w-4 h-4" />
-        </motion.div>
-      </section>
+          {/* Badge */}
+          <motion.div 
+            initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}
+            className="mb-8 inline-flex items-center gap-3 px-5 py-2.5 rounded-full border border-amber-500/30 bg-amber-500/5 backdrop-blur-md shadow-[0_0_20px_rgba(251,191,36,0.1)]"
+          >
+            <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-amber-400">The New Era of Nightlife</span>
+          </motion.div>
 
-      {/* --- DETAILS SECTION --- */}
-      {/* 🚀 SETTINGS PASS KAR RAHE HAIN */}
-      <EventDetails settings={settings} />
+          {/* Main Headline */}
+          <motion.h1 
+            initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}
+            className="text-5xl md:text-[5.5rem] font-black uppercase tracking-tighter leading-[0.85] mb-8 drop-shadow-2xl"
+          >
+            Curating The <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-500 to-yellow-600">
+              Elite Experience
+            </span>
+          </motion.h1>
 
-      {/* --- RSVP CTA SECTION --- */}
-      <section className="w-full py-24 flex flex-col items-center px-6">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.8 }}
-          className="text-center"
-        >
-          <h2 className="text-3xl font-light mb-8">Kindly verify your identity to RSVP</h2>
-          
-          <Link href="/verify">
-            <button className="group relative px-8 py-4 bg-white text-neutral-950 font-medium rounded-full overflow-hidden transition-transform hover:scale-105 active:scale-95">
-              <span className="relative z-10 flex items-center gap-2">
-                Unlock Invitation
-              </span>
-              <div className="absolute inset-0 bg-neutral-200 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+          {/* Subheadline (No apostrophes = No ESLint Errors) */}
+          <motion.p 
+            initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}
+            className="text-neutral-400 md:text-lg max-w-2xl font-medium tracking-wide mb-12 leading-relaxed opacity-80"
+          >
+            Step into a world of exclusive events, secret locations, and seamless access. Nocta is the premier portal for the most anticipated gatherings in town.
+          </motion.p>
+
+          {/* CTA Buttons */}
+          <motion.div 
+            initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}
+            className="flex flex-col sm:flex-row items-center gap-6 w-full sm:w-auto"
+          >
+            <button 
+              onClick={() => router.push('/verify')}
+              className="w-full sm:w-auto px-12 py-5 bg-white text-black font-black uppercase tracking-[0.2em] rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-[0_0_40px_rgba(255,255,255,0.2)] flex items-center justify-center gap-3 text-sm"
+            >
+              <Ticket className="w-5 h-5" />
+              Claim Your VIP Pass
             </button>
-          </Link>
+          </motion.div>
         </motion.div>
-      </section>
+
+        {/* 💎 FEATURES SECTION (GLASSMORPHISM) */}
+        <motion.div 
+          initial={{ opacity: 0, y: 50 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.2, duration: 1, ease: "easeOut" }}
+          className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-32 w-full max-w-5xl"
+        >
+          {[
+            { icon: ShieldCheck, title: "Secure Entry", desc: "Military-grade OTP verification & dynamic QR codes." },
+            { icon: Sparkles, title: "Premium Events", desc: "Handpicked, highly-curated multi-city experiences." },
+            { icon: Zap, title: "Seamless Flow", desc: "Lightning-fast check-ins and zero queues at the gate." }
+          ].map((feat) => (
+            <div key={feat.title} className="bg-white/5 border border-white/10 p-8 rounded-[2rem] hover:bg-white/10 transition-all duration-500 backdrop-blur-xl text-left group hover:-translate-y-2 hover:shadow-[0_10px_40px_rgba(251,191,36,0.05)]">
+              <div className="w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-6 border border-amber-500/20 group-hover:scale-110 transition-transform duration-500">
+                <feat.icon className="w-7 h-7 text-amber-500" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-3 tracking-wide">{feat.title}</h3>
+              <p className="text-neutral-400 text-sm leading-relaxed font-medium">{feat.desc}</p>
+            </div>
+          ))}
+        </motion.div>
+      </div>
     </main>
   );
 }
