@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
-import { ArrowRight, Loader2, KeyRound, CheckCircle2, Ticket } from "lucide-react";
+import { ArrowRight, Loader2, KeyRound, CheckCircle2, Ticket, ChevronDown } from "lucide-react";
 
 // 🚀 FIREBASE IMPORTS
 import { auth } from "@/lib/firebase";
@@ -17,6 +17,9 @@ export default function VerifyPage() {
   const [allEvents, setAllEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [eventsLoading, setEventsLoading] = useState(true);
+  
+  // 🚀 Custom Dropdown State
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // --- EXISTING STATES ---
   const [firstName, setFirstName] = useState("");
@@ -162,6 +165,10 @@ export default function VerifyPage() {
     }
   };
 
+  // 🚀 Masked Phone Number helper
+  const rawPhone = successData?.data?.mobileNumber || successData?.guest?.mobileNumber || "";
+  const maskedPhone = rawPhone ? `******${String(rawPhone).slice(-4)}` : "";
+
   return (
     <main className="min-h-screen w-full flex flex-col items-center justify-center px-6 relative">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-neutral-800/40 via-neutral-950 to-neutral-950 -z-10" />
@@ -178,31 +185,52 @@ export default function VerifyPage() {
         {!successData ? (
           <form onSubmit={handleVerify} className="space-y-4">
             
-            {/* 🚀 NEW: EVENT SELECTOR */}
+            {/* 🚀 UPGRADED: MODERN CUSTOM EVENT SELECTOR */}
             <div className="relative">
               {eventsLoading ? (
-                <div className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 flex items-center justify-center">
+                <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 flex items-center justify-center">
                   <Loader2 className="w-5 h-5 animate-spin text-neutral-500" />
                 </div>
               ) : (
-                <div className="relative flex items-center">
-                  <Ticket className="absolute left-4 w-5 h-5 text-amber-500" />
-                  <select
-                    value={selectedEventId}
-                    onChange={(e) => {
-                      setSelectedEventId(e.target.value);
-                      setError(""); // Naya event chunte hi error hata do
-                    }}
-                    className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg pl-12 pr-4 py-4 text-white outline-none focus:border-amber-500/50 appearance-none font-medium transition-all"
-                    required
+                <div className="relative">
+                  <div 
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className={`w-full bg-white/5 border ${isDropdownOpen ? 'border-amber-500/50' : 'border-white/10'} rounded-xl pl-12 pr-4 py-4 flex items-center justify-between cursor-pointer hover:bg-white/10 transition-all`}
                   >
-                    <option value="" disabled>Select The Event You're Attending</option>
-                    {allEvents.map((event) => (
-                      <option key={event.eventId} value={event.eventId}>
-                        {event.mainTitle}
-                      </option>
-                    ))}
-                  </select>
+                    <Ticket className="absolute left-4 w-5 h-5 text-amber-500" />
+                    <span className={`font-medium ${selectedEventId ? "text-white" : "text-neutral-500"}`}>
+                      {selectedEventId 
+                        ? allEvents.find(e => e.eventId === selectedEventId)?.mainTitle 
+                        : "Select The Event You're Attending"}
+                    </span>
+                    <ChevronDown className={`w-5 h-5 text-neutral-400 transition-transform duration-300 ${isDropdownOpen ? "rotate-180 text-amber-500" : ""}`} />
+                  </div>
+
+                  <AnimatePresence>
+                    {isDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute w-full mt-2 bg-neutral-900 border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl"
+                      >
+                        {allEvents.map((event) => (
+                          <div
+                            key={event.eventId}
+                            onClick={() => {
+                              setSelectedEventId(event.eventId);
+                              setIsDropdownOpen(false);
+                              setError("");
+                            }}
+                            className="px-5 py-4 cursor-pointer hover:bg-white/5 border-b border-white/5 last:border-0 text-white font-medium transition-colors"
+                          >
+                            {event.mainTitle}
+                          </div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
             </div>
@@ -216,8 +244,8 @@ export default function VerifyPage() {
                   exit={{ opacity: 0, height: 0 }}
                   className="space-y-4 overflow-hidden pt-2"
                 >
-                  <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-white/30 transition-all" placeholder="First Name" />
-                  <input type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white outline-none focus:border-white/30 transition-all" placeholder="Last Name" />
+                  <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-white outline-none focus:border-amber-500/50 transition-all" placeholder="First Name" />
+                  <input type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-white outline-none focus:border-amber-500/50 transition-all" placeholder="Last Name" />
                   
                   {error && <p className="text-red-400 text-sm text-center font-medium">{error}</p>}
                   
@@ -235,7 +263,15 @@ export default function VerifyPage() {
               <CheckCircle2 className="w-10 h-10"/>
             </div>
             <h2 className="text-2xl font-medium">Welcome, {firstName}!</h2>
-            <p className="text-neutral-400 text-sm">We found your RSVP record.</p>
+            
+            {/* 🚀 UPGRADED: MASKED NUMBER DISPLAY */}
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+              <p className="text-neutral-400 text-sm mb-1">We found your RSVP record.</p>
+              <p className="text-white font-medium">
+                OTP will be sent to <span className="text-amber-400 font-mono tracking-widest">{maskedPhone}</span>
+              </p>
+            </div>
+
             {error && <p className="text-red-400 text-sm text-center">{error}</p>}
             
             <button onClick={handleSendOtp} disabled={loading} className="w-full bg-white text-neutral-950 py-4 rounded-xl font-bold flex justify-center items-center hover:bg-neutral-200 active:scale-95 transition-all">
@@ -248,7 +284,7 @@ export default function VerifyPage() {
               <KeyRound className="w-10 h-10"/>
             </div>
             <h2 className="text-xl font-medium mb-4">Enter OTP</h2>
-            <input type="text" required maxLength={6} value={otpInput} onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-center text-3xl tracking-[0.5em] text-white outline-none font-mono focus:border-blue-500/50 transition-all" placeholder="••••••" />
+            <input type="text" required maxLength={6} value={otpInput} onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-center text-3xl tracking-[0.5em] text-white outline-none font-mono focus:border-amber-500/50 transition-all" placeholder="••••••" />
             {otpError && <p className="text-red-400 text-sm text-center font-medium mt-2">{otpError}</p>}
             
             <button type="submit" disabled={loading} className="w-full bg-white text-neutral-950 py-4 rounded-xl font-bold flex justify-center items-center hover:bg-neutral-200 active:scale-95 transition-all mt-6">
