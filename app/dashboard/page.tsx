@@ -7,6 +7,7 @@ import html2canvas from "html2canvas";
 import { motion } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
 import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download } from "lucide-react";
+import { toast } from "sonner";
 
 export default function DashboardPage() {
   const [guestName, setGuestName] = useState("");
@@ -43,16 +44,26 @@ export default function DashboardPage() {
     fetchAllData();
   }, []);
 
-  // 🚀 VIP PASS DOWNLOAD FUNCTION 
+  // 🚀 VIP PASS DOWNLOAD FUNCTION (Updated with Toast & CORS fix)
   const downloadVIPPass = async () => {
     const ticketElement = document.getElementById("vip-pass-card");
-    if (!ticketElement) return;
+    if (!ticketElement) {
+      toast.error("Ticket card not found!");
+      return;
+    }
+
+    const toastId = toast.loading("Generating your VIP Pass..."); 
 
     try {
+      window.scrollTo(0, 0); // 🚀 Screen ke top pe scroll karega taaki photo na kate
+
       const canvas = await html2canvas(ticketElement, { 
         backgroundColor: "#0a0a0a", 
-        scale: 2 
-      } as any); // 🚀 Yahan 'as any' lagane se Vercel rona band kar dega
+        scale: 2,
+        useCORS: true,     // 🚀 QR Code SVG render issue fix
+        allowTaint: true   // 🚀 Cross-origin fix
+      } as any); 
+      
       const imgData = canvas.toDataURL("image/png");
 
       const pdf = new jsPDF("p", "mm", "a5"); 
@@ -63,8 +74,11 @@ export default function DashboardPage() {
       
       const fileName = guestName ? `${guestName.replace(/\s+/g, '_')}_Nocta_VIP_Pass.pdf` : "Nocta_VIP_Pass.pdf";
       pdf.save(fileName);
-    } catch (error) {
+
+      toast.success("VIP Pass Downloaded Successfully! 🎉", { id: toastId });
+    } catch (error: any) {
       console.error("PDF generation failed", error);
+      toast.error("Download Failed: " + (error.message || "Unknown error"), { id: toastId });
     }
   };
 
@@ -129,6 +143,7 @@ export default function DashboardPage() {
 
         {/* 🚀 DOWNLOAD BUTTON */}
         <button 
+          type="button" 
           onClick={downloadVIPPass}
           disabled={loading || !entryCode}
           className="mt-6 w-full py-4 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-medium rounded-xl active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
