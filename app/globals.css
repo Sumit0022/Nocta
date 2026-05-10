@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  /* 🔥 YAHAN CHANGE HAI: Hamesha ke liye Dark Mode colors set kar diye */
+  /* YAHAN CHANGE HAI: Hamesha ke liye Dark Mode colors set kar diye */
   --background: #0a0a0a;
   --foreground: #ededed;
 }

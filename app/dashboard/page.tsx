@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import { motion } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
-import { CheckCircle2, Calendar, MapPin, Clock, Loader2 } from "lucide-react";
+import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download } from "lucide-react";
 
 export default function DashboardPage() {
   const [guestName, setGuestName] = useState("");
@@ -40,42 +43,100 @@ export default function DashboardPage() {
     fetchAllData();
   }, []);
 
+  // 🚀 VIP PASS DOWNLOAD FUNCTION 
+  const downloadVIPPass = async () => {
+    const ticketElement = document.getElementById("vip-pass-card");
+    if (!ticketElement) return;
+
+    try {
+      const canvas = await html2canvas(ticketElement, { 
+        backgroundColor: "#0a0a0a", // Dark background maintain rakhega
+        scale: 2 // HD Quality for QR scanning
+      });
+      const imgData = canvas.toDataURL("image/png");
+
+      const pdf = new jsPDF("p", "mm", "a5"); 
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      
+      const fileName = guestName ? `${guestName.replace(/\s+/g, '_')}_Nocta_VIP_Pass.pdf` : "Nocta_VIP_Pass.pdf";
+      pdf.save(fileName);
+    } catch (error) {
+      console.error("PDF generation failed", error);
+    }
+  };
+
   return (
-    <main className="min-h-screen w-full flex flex-col items-center justify-center px-6 relative">
+    <main className="min-h-screen w-full flex flex-col items-center justify-center px-6 relative py-12">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-neutral-800/40 via-neutral-950 to-neutral-950 -z-10" />
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
-        <GlassCard className="overflow-hidden p-0">
-          <div className="bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-amber-500/20 p-6 border-b border-white/10 text-center text-white">
-            <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-amber-400" />
-            <h1 className="text-2xl font-light tracking-wide">VIP PASS GRANTED</h1>
-            <h2 className="text-lg font-medium mt-2 capitalize">{guestName}</h2>
-          </div>
-
-          <div className="p-8 space-y-6">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4 text-neutral-300">
-                <Calendar className="w-5 h-5 text-neutral-500" />
-                <div><p className="text-xs text-neutral-500 uppercase">Date</p><p className="font-medium">{eventDetails?.eventDate || "Loading..."}</p></div>
-              </div>
-              <div className="flex items-center gap-4 text-neutral-300">
-                <Clock className="w-5 h-5 text-neutral-500" />
-                <div><p className="text-xs text-neutral-500 uppercase">Time</p><p className="font-medium">{eventDetails?.eventTime || "Loading..."}</p></div>
-              </div>
-              <div className="flex items-center gap-4 text-neutral-300">
-                <MapPin className="w-5 h-5 text-neutral-500" />
-                <div><p className="text-xs text-neutral-500 uppercase">Venue</p><p className="font-medium">{eventDetails?.eventVenue || "Loading..."}</p></div>
-              </div>
+        
+        {/* 🚀 Wrapper Div added here specifically to fix the TypeScript Error */}
+        <div id="vip-pass-card" className="w-full rounded-3xl overflow-hidden">
+          <GlassCard className="overflow-hidden p-0 relative border-0">
+            <div className="bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-amber-500/20 p-6 border-b border-white/10 text-center text-white">
+              <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-amber-400" />
+              <h1 className="text-2xl font-light tracking-wide">VIP PASS GRANTED</h1>
+              <h2 className="text-lg font-medium mt-2 capitalize">{guestName}</h2>
             </div>
 
-            <div className="pt-6 border-t border-white/10 text-center">
-              <p className="text-xs text-neutral-500 mb-3 uppercase tracking-widest">Entry Code</p>
-              <div className="bg-white/5 rounded-lg h-16 border border-white/10 font-mono text-2xl text-amber-400 flex items-center justify-center font-bold tracking-[0.3em]">
-                {loading ? <Loader2 className="animate-spin" /> : entryCode}
+            <div className="p-8 space-y-6">
+              <div className="space-y-4">
+                <div className="flex items-center gap-4 text-neutral-300">
+                  <Calendar className="w-5 h-5 text-neutral-500" />
+                  <div><p className="text-xs text-neutral-500 uppercase">Date</p><p className="font-medium">{eventDetails?.eventDate || "Loading..."}</p></div>
+                </div>
+                <div className="flex items-center gap-4 text-neutral-300">
+                  <Clock className="w-5 h-5 text-neutral-500" />
+                  <div><p className="text-xs text-neutral-500 uppercase">Time</p><p className="font-medium">{eventDetails?.eventTime || "Loading..."}</p></div>
+                </div>
+                <div className="flex items-center gap-4 text-neutral-300">
+                  <MapPin className="w-5 h-5 text-neutral-500" />
+                  <div><p className="text-xs text-neutral-500 uppercase">Venue</p><p className="font-medium">{eventDetails?.eventVenue || "Loading..."}</p></div>
+                </div>
+              </div>
+
+              <div className="pt-6 border-t border-white/10 text-center">
+                
+                {/* 🚀 QR CODE SECTION */}
+                <div className="bg-white p-3 rounded-2xl w-fit mx-auto mb-6 shadow-[0_0_20px_rgba(251,191,36,0.1)]">
+                  {loading || !entryCode ? (
+                     <div className="w-[120px] h-[120px] flex items-center justify-center bg-gray-100 rounded-xl">
+                        <Loader2 className="animate-spin text-gray-400" />
+                     </div>
+                  ) : (
+                    <QRCodeSVG 
+                      value={entryCode} 
+                      size={120} 
+                      bgColor={"#ffffff"} 
+                      fgColor={"#000000"} 
+                      level={"H"} 
+                    />
+                  )}
+                </div>
+
+                <p className="text-xs text-neutral-500 mb-3 uppercase tracking-widest">Entry Code</p>
+                <div className="bg-white/5 rounded-lg h-16 border border-white/10 font-mono text-2xl text-amber-400 flex items-center justify-center font-bold tracking-[0.3em]">
+                  {loading ? <Loader2 className="animate-spin" /> : entryCode}
+                </div>
               </div>
             </div>
-          </div>
-        </GlassCard>
+          </GlassCard>
+        </div>
+
+        {/* 🚀 DOWNLOAD BUTTON */}
+        <button 
+          onClick={downloadVIPPass}
+          disabled={loading || !entryCode}
+          className="mt-6 w-full py-4 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-medium rounded-xl active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Download className="w-5 h-5" />
+          Download VIP Pass (PDF)
+        </button>
+
       </motion.div>
     </main>
   );
