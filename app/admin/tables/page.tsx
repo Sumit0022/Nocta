@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react"; // 🚀 Suspense import kiya
+// 🚀 NEXT.JS BUILD FIX: Yeh line Vercel ko batati hai ki page dynamic hai
+export const dynamic = 'force-dynamic';
+
+import { useState, useEffect, Suspense } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Plus, LayoutGrid, Users, IndianRupee, Crown, User, AlertCircle, ChevronDown, ArrowLeft } from "lucide-react";
 import GlassCard from "@/components/atoms/GlassCard";
 import { useSearchParams, useRouter } from "next/navigation";
 
-// 🚀 Naya Component banaya saare logic ke liye
 function TableManagerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -154,7 +156,6 @@ function TableManagerContent() {
   );
 }
 
-// 🚀 MAIN EXPORT: Isko Suspense mein wrap kiya taaki Vercel build pass ho jaye
 export default function TableManager() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#050505] flex items-center justify-center"><Loader2 className="animate-spin w-8 h-8 text-amber-500" /></div>}>
