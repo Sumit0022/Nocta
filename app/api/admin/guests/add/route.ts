@@ -1,28 +1,35 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore/lite";
+import { collection, addDoc } from "firebase/firestore/lite";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     
-    // Generate a unique VIP code (jaise: NCT-A5B2C)
-    const entryCode = "NCT-" + Math.random().toString(36).substring(2, 7).toUpperCase();
+    // 🚀 THE FIX: Frontend se aane wale saare data ko pakdo, jisme ab eventId bhi hai
+    const { firstName, lastName, mobileNumber, amount, rsvpStatus, eventId } = body;
 
-    // Firebase Firestore logic: 'guests' naam ka collection banega
-    const docRef = await addDoc(collection(db, "guests"), {
-      firstName: body.firstName,
-      lastName: body.lastName,
-      mobileNumber: body.mobileNumber,
-      amount: Number(body.amount),
-      rsvpStatus: body.rsvpStatus || "Pending",
+    // 6-Digit ka unique Entry Code generate karo
+    const entryCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Firebase mein bhejne ke liye naya object banao
+    const newGuest = {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      mobileNumber: mobileNumber.trim(),
+      amount: Number(amount),
+      rsvpStatus: rsvpStatus || "Pending",
+      eventId: eventId, // 🔥 YEH MISSING THA! Ab guest theek usi event mein judega
       entryCode: entryCode,
-      createdAt: serverTimestamp(),
-    });
+      createdAt: new Date().toISOString()
+    };
 
-    return NextResponse.json({ success: true, id: docRef.id });
+    // Firebase DB mein save karo
+    const docRef = await addDoc(collection(db, "guests"), newGuest);
+    
+    return NextResponse.json({ success: true, id: docRef.id, message: "Guest Added to Event" });
   } catch (error) {
-    console.error("Firebase Add Error:", error);
+    console.error("Add Guest Error:", error);
     return NextResponse.json({ success: false, error: "Failed to add guest" }, { status: 500 });
   }
 }
