@@ -136,7 +136,7 @@ export default function AdminDashboard() {
       }
     }
   }, [activeEventId, allEvents]);
-
+  
   // --- HANDLERS ---
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -486,6 +486,14 @@ export default function AdminDashboard() {
               className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 shadow-[0_0_15px_rgba(251,191,36,0.15)] transition-all"
             >
               <ScanLine className="w-4 h-4" /> Scan Pass
+            </button>
+
+            {/* 🚀 NEW: MANAGE TABLES BUTTON */}
+            <button 
+              onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)}
+              className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 transition-all shadow-[0_0_15px_rgba(251,191,36,0.2)]"
+            >
+              Manage Tables
             </button>
 
             <button 

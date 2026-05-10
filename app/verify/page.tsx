@@ -155,7 +155,8 @@ export default function VerifyPage() {
         router.push('/status');
       } 
       else {
-        router.push(`/payment?firstName=${firstName}&lastName=${lastName}&eventId=${selectedEventId}`); 
+        // YAHAN CHANGE KAREIN 👇
+        router.push(`/table-booking?firstName=${firstName}&lastName=${lastName}&eventId=${selectedEventId}&guestId=${successData?.data?._id || successData?.guest?._id || ""}`); 
       }
     } catch (error) {
       console.error("Verification failed", error);
