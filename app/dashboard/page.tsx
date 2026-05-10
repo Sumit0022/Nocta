@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import { toPng } from "html-to-image"; // 🚀 NAYI LIBRARY YAHAN AAYI HAI
 import { motion } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
 import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download } from "lucide-react";
@@ -22,7 +22,6 @@ export default function DashboardPage() {
       const lName = params.get("lastName");
       
       try {
-        // 1. Fetch Guest Details
         if (fName && lName) {
           setGuestName(`${fName} ${lName}`);
           const guestRes = await fetch(`/api/guest/details?firstName=${fName}&lastName=${lName}`, { cache: "no-store" });
@@ -30,7 +29,6 @@ export default function DashboardPage() {
           if (guestResult.success) setEntryCode(guestResult.data.entryCode || "N/A");
         }
 
-        // 2. Fetch Event Settings
         const settingsRes = await fetch('/api/admin/settings', { cache: "no-store" });
         const settingsResult = await settingsRes.json();
         if (settingsResult.success) setEventDetails(settingsResult.data);
@@ -44,7 +42,7 @@ export default function DashboardPage() {
     fetchAllData();
   }, []);
 
-  // 🚀 VIP PASS DOWNLOAD FUNCTION (Updated with Toast & CORS fix)
+  // 🚀 VIP PASS DOWNLOAD FUNCTION (Ab html-to-image use kar raha hai)
   const downloadVIPPass = async () => {
     const ticketElement = document.getElementById("vip-pass-card");
     if (!ticketElement) {
@@ -55,22 +53,24 @@ export default function DashboardPage() {
     const toastId = toast.loading("Generating your VIP Pass..."); 
 
     try {
-      window.scrollTo(0, 0); // 🚀 Screen ke top pe scroll karega taaki photo na kate
+      window.scrollTo(0, 0); 
 
-      const canvas = await html2canvas(ticketElement, { 
+      // 🚀 html-to-image Tailwind v4 aur Oklab colors ko perfectly samajhta hai
+      const dataUrl = await toPng(ticketElement, { 
         backgroundColor: "#0a0a0a", 
-        scale: 2,
-        useCORS: true,     // 🚀 QR Code SVG render issue fix
-        allowTaint: true   // 🚀 Cross-origin fix
-      } as any); 
-      
-      const imgData = canvas.toDataURL("image/png");
+        pixelRatio: 2, // HD Quality
+        cacheBust: true,
+      });
 
       const pdf = new jsPDF("p", "mm", "a5"); 
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      // Ticket ki height/width nikal kar PDF mein perfect fit karna
+      const eleWidth = ticketElement.offsetWidth;
+      const eleHeight = ticketElement.offsetHeight;
+      const pdfHeight = (eleHeight * pdfWidth) / eleWidth;
 
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(dataUrl, "PNG", 0, 0, pdfWidth, pdfHeight);
       
       const fileName = guestName ? `${guestName.replace(/\s+/g, '_')}_Nocta_VIP_Pass.pdf` : "Nocta_VIP_Pass.pdf";
       pdf.save(fileName);
@@ -88,7 +88,6 @@ export default function DashboardPage() {
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
         
-        {/* 🚀 Wrapper Div added here specifically to fix the TypeScript Error */}
         <div id="vip-pass-card" className="w-full rounded-3xl overflow-hidden">
           <GlassCard className="overflow-hidden p-0 relative border-0">
             <div className="bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-amber-500/20 p-6 border-b border-white/10 text-center text-white">
@@ -115,7 +114,6 @@ export default function DashboardPage() {
 
               <div className="pt-6 border-t border-white/10 text-center">
                 
-                {/* 🚀 QR CODE SECTION */}
                 <div className="bg-white p-3 rounded-2xl w-fit mx-auto mb-6 shadow-[0_0_20px_rgba(251,191,36,0.1)]">
                   {loading || !entryCode ? (
                      <div className="w-[120px] h-[120px] flex items-center justify-center bg-gray-100 rounded-xl">
@@ -141,7 +139,6 @@ export default function DashboardPage() {
           </GlassCard>
         </div>
 
-        {/* 🚀 DOWNLOAD BUTTON */}
         <button 
           type="button" 
           onClick={downloadVIPPass}
