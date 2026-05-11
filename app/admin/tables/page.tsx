@@ -87,7 +87,11 @@ function TableManagerContent() {
   const getTableReservationDetails = (tableId: string) => {
     const validGuests = Array.isArray(guests) ? guests : [];
     const captain = validGuests.find(g => g.tableId === tableId && g.isCaptain);
-    const subs = validGuests.filter(g => g.tableId === tableId && g.isSubordinate && g.hostId === captain?._id);
+    
+    // 🚀 FIX 1: Firebase ID compatibility (_id or id)
+    const captainId = captain?._id || captain?.id; 
+    
+    const subs = validGuests.filter(g => g.tableId === tableId && g.isSubordinate && g.hostId === captainId);
     return { captain, subs };
   };
 
@@ -138,7 +142,16 @@ function TableManagerContent() {
                 <motion.div key={table.id} className={`rounded-3xl p-6 border transition-all ${table.status === 'Requested' || table.status === 'Booked' ? 'bg-amber-500/5 border-amber-500/30' : 'bg-white/[0.02] border-white/10'}`}>
                   <div className="flex justify-between items-start mb-4 border-b border-white/10 pb-4">
                     <div><h3 className="text-xl font-black text-white uppercase tracking-wider">{table.tableName}</h3><p className="text-xs text-zinc-500 mt-1">Min Spend: <span className="text-amber-500">₹{table.minSpend}</span></p></div>
-                    <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full ${table.status === 'Available' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{table.status}</span>
+                    
+                    {/* 🚀 FIX 2: Added "Booked" color status */}
+                    <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full ${
+                      table.status === 'Available' ? 'bg-green-500/10 text-green-400' : 
+                      table.status === 'Requested' ? 'bg-orange-500/10 text-orange-400' : 
+                      'bg-amber-500/20 text-amber-500' 
+                    }`}>
+                      {table.status}
+                    </span>
+
                   </div>
                   {captain ? (
                     <div className="space-y-3">

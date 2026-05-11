@@ -9,7 +9,7 @@ import {
   Users, CheckCircle2, IndianRupee, MessageCircle, Plus, 
   Loader2, X, Edit, Eye, AlertCircle, Trash2, Search, 
   ArrowLeft, Printer, Settings, UploadCloud, Sparkles,
-  LogOut, Ticket, ScanLine, PlusCircle
+  LogOut, Ticket, ScanLine, PlusCircle, Crown, User 
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { QRCodeSVG } from "qrcode.react"; 
@@ -34,6 +34,7 @@ export default function AdminDashboard() {
 
   // --- EXISTING STATES ---
   const [guests, setGuests] = useState<any[]>([]);
+  const [tables, setTables] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("Overview");
   const [searchQuery, setSearchQuery] = useState("");
@@ -93,27 +94,32 @@ export default function AdminDashboard() {
     }
   };
 
-  const fetchGuests = async (eventId: string) => {
+  const fetchGuestsAndTables = async (eventId: string) => {
     if (!eventId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/guests?eventId=${eventId}`);
-      if (res.status === 401) {
+      const resGuests = await fetch(`/api/admin/guests?eventId=${eventId}`);
+      if (resGuests.status === 401) {
         router.push('/admin/login');
         return;
       }
-      const result = await res.json();
-      
-      if (result.success) {
-        const fetchedList = result.guests || result.data || [];
+      const resultGuests = await resGuests.json();
+      if (resultGuests.success) {
+        const fetchedList = resultGuests.guests || resultGuests.data || [];
         setGuests(Array.isArray(fetchedList) ? fetchedList : []);
       } else {
         setGuests([]);
       }
+
+      const resTables = await fetch(`/api/admin/tables?eventId=${eventId}`);
+      const resultTables = await resTables.json();
+      if (resultTables.success) {
+        setTables(resultTables.data || []);
+      }
       
     } catch (error) { 
-      console.error("Fetch guests failed:", error); 
-      toast.error("Error loading guest list");
+      console.error("Fetch failed:", error); 
+      toast.error("Error loading data");
       setGuests([]); 
     } 
     finally { 
@@ -121,15 +127,13 @@ export default function AdminDashboard() {
     }
   };
 
-  // Initial Load
   useEffect(() => { 
     fetchEvents(); 
   }, []);
 
-  // Event Switch Logic
   useEffect(() => {
     if (activeEventId) {
-      fetchGuests(activeEventId);
+      fetchGuestsAndTables(activeEventId);
       const currentEvent = allEvents.find(e => e.eventId === activeEventId);
       if (currentEvent) {
         setSettings(currentEvent);
@@ -200,16 +204,29 @@ export default function AdminDashboard() {
   };
 
   const handleDelete = async (id: string, name: string) => {
+    if (!id) {
+      toast.error("Error: Guest ID not found!");
+      return;
+    }
+
     if (confirm(`Are you sure you want to delete ${name}?`)) {
-      const res = await fetch('/api/admin/guests/delete', { 
-        method: 'DELETE', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ id }) 
-      });
-      if (res.status === 401) router.push('/admin/login');
-      if (res.ok) {
-        toast.success(`${name} removed successfully`);
-        fetchGuests(activeEventId);
+      try {
+        const res = await fetch('/api/admin/guests/delete', { 
+          method: 'DELETE', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ id }) 
+        });
+        
+        if (res.status === 401) router.push('/admin/login');
+        
+        if (res.ok) {
+          toast.success(`${name} removed successfully`);
+          fetchGuestsAndTables(activeEventId);
+        } else {
+          toast.error("Failed to delete guest");
+        }
+      } catch (error) {
+        toast.error("Network error while deleting");
       }
     }
   };
@@ -237,7 +254,7 @@ export default function AdminDashboard() {
       toast.success(`Guest set to: ${newStatus}`);
       setIsVerifyModalOpen(false); 
       setIsUpdatingStatus(false); 
-      fetchGuests(activeEventId);
+      fetchGuestsAndTables(activeEventId);
     }
   };
 
@@ -255,7 +272,7 @@ export default function AdminDashboard() {
       toast.success(isEditing ? "Guest details updated" : "New guest added");
       setIsModalOpen(false); 
       setIsSubmitting(false); 
-      fetchGuests(activeEventId);
+      fetchGuestsAndTables(activeEventId);
     }
   };
 
@@ -276,7 +293,6 @@ export default function AdminDashboard() {
     window.open(`https://wa.me/91${guest.mobileNumber}?text=${encodedMessage}`, '_blank');
   };
 
-  // 🚀 HIGH-END VIP PASS GENERATOR
   const downloadVIPPass = (guest: any) => {
     setDownloadingGuest(guest); 
     const toastId = toast.loading("Generating Concert-Style VIP Pass...");
@@ -315,7 +331,6 @@ export default function AdminDashboard() {
     }, 500); 
   };
 
-  // 🚀 SCANNER LOGIC
   const handleScan = (result: any) => {
     const text = Array.isArray(result) ? result[0].rawValue : result;
     if (!text) return;
@@ -339,13 +354,12 @@ export default function AdminDashboard() {
       toast.success(`${guest.firstName} is Checked-In successfully!`, { id: toastId });
       setScannedResult(null); 
       setIsScannerOpen(false); 
-      fetchGuests(activeEventId);
+      fetchGuestsAndTables(activeEventId);
     } else {
       toast.error("Failed to check-in", { id: toastId });
     }
   };
 
-  // --- LOGIC & FILTERING ---
   const filteredGuests = useMemo(() => {
     let list = Array.isArray(guests) ? [...guests] : [];
     if (view === "Confirmed") list = list.filter(g => g.rsvpStatus === "Confirmed");
@@ -364,10 +378,43 @@ export default function AdminDashboard() {
                phone.includes(query);
       });
     }
-    return list;
+
+    const sortedList: any[] = [];
+    const processedIds = new Set();
+
+    list.forEach(g => {
+      const gId = g._id || g.id;
+      if (g.isCaptain && !processedIds.has(gId)) {
+        sortedList.push(g);
+        processedIds.add(gId);
+        
+        const subs = list.filter(sub => sub.isSubordinate && sub.hostId === gId);
+        subs.forEach(sub => {
+          const subId = sub._id || sub.id;
+          sortedList.push(sub);
+          processedIds.add(subId);
+        });
+      }
+    });
+
+    list.forEach(g => {
+      const gId = g._id || g.id;
+      if (!processedIds.has(gId)) {
+        sortedList.push(g);
+        processedIds.add(gId);
+      }
+    });
+
+    return sortedList;
   }, [guests, view, searchQuery]);
 
-  const revenueReceived = guests.filter(g => g.rsvpStatus === "Confirmed" || g.rsvpStatus === "Checked-In").reduce((sum, g) => sum + (g.amount || 0), 0);
+  // 🚀 FIXED: Revenue calculation smart logic
+  const revenueReceived = guests.filter(g => g.rsvpStatus === "Confirmed" || g.rsvpStatus === "Checked-In").reduce((sum, g) => {
+    if (g.isSubordinate) return sum; // Sub-ordinates pay nothing extra
+    const guestTable = tables.find(t => t.id === g.tableId);
+    const amt = (g.isCaptain && guestTable) ? Number(guestTable.minSpend) : Number(g.amount || 0);
+    return sum + amt;
+  }, 0);
 
   const stats = [
     { 
@@ -398,7 +445,6 @@ export default function AdminDashboard() {
 
   return (
     <main className="min-h-screen w-full p-6 md:p-10 relative text-white">
-      {/* CSS FOR PRINTING (PDF) */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print { 
           body { background: white !important; color: black !important; padding: 0 !important; } 
@@ -413,7 +459,6 @@ export default function AdminDashboard() {
 
       <div className="max-w-6xl mx-auto space-y-8">
         
-        {/* --- HEADER --- */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
           
           <div className="flex flex-col gap-2">
@@ -431,7 +476,6 @@ export default function AdminDashboard() {
               </h1>
             </div>
 
-            {/* 🚀 HUB SELECTOR IN HEADER */}
             <div className="flex items-center gap-3 mt-1">
               <div className="bg-white/5 border border-white/10 rounded-full pl-4 pr-3 py-1.5 flex items-center gap-3">
                 <Sparkles className="w-4 h-4 text-amber-400" />
@@ -480,7 +524,6 @@ export default function AdminDashboard() {
               </button>
             )}
 
-            {/* 🚀 NEW: SCANNER BUTTON */}
             <button 
               onClick={() => setIsScannerOpen(true)} 
               className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 shadow-[0_0_15px_rgba(251,191,36,0.15)] transition-all"
@@ -488,7 +531,6 @@ export default function AdminDashboard() {
               <ScanLine className="w-4 h-4" /> Scan Pass
             </button>
 
-            {/* 🚀 NEW: MANAGE TABLES BUTTON */}
             <button 
               onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)}
               className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 transition-all shadow-[0_0_15px_rgba(251,191,36,0.2)]"
@@ -525,7 +567,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* --- SETTINGS VIEW --- */}
         {view === "Settings" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 no-print animate-in fade-in duration-500">
             
@@ -635,7 +676,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* --- STATS GRID --- */}
         {view === "Overview" && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 no-print animate-in fade-in duration-500">
             {stats.map((stat, i) => (
@@ -670,7 +710,6 @@ export default function AdminDashboard() {
           </div>
         )}
         
-        {/* --- GUEST TABLE --- */}
         {view !== "Settings" && (
           <GlassCard className="p-0 overflow-hidden table-container border-white/10 animate-in fade-in duration-700">
             <div className="p-6 border-b border-white/10 font-medium no-print flex justify-between items-center">
@@ -699,16 +738,32 @@ export default function AdminDashboard() {
                     </tr>
                   ) : (
                     filteredGuests.map((guest) => (
-                      <tr key={guest.id || guest._id || Math.random()} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                      <tr key={guest.id || guest._id || Math.random()} className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors ${guest.isSubordinate ? 'bg-white/[0.01]' : ''}`}>
+                        
                         <td className="p-4 capitalize font-medium">
-                          {guest.firstName} {guest.lastName}
+                          <div className="flex items-center gap-2">
+                            {guest.isSubordinate && <div className="w-3 h-3 border-l-2 border-b-2 border-neutral-600 rounded-bl ml-2 opacity-50"></div>}
+                            <span>{guest.firstName} {guest.lastName}</span>
+                            {guest.isCaptain && <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest flex items-center gap-1"><Crown className="w-3 h-3"/> Captain</span>}
+                            {guest.isSubordinate && <span className="bg-white/5 text-neutral-400 border border-white/10 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest flex items-center gap-1"><User className="w-3 h-3"/> Pax</span>}
+                          </div>
                         </td>
+
                         <td className="p-4 text-neutral-400 no-print">
                           {guest.mobileNumber}
                         </td>
+                        
+                        {/* 🚀 FIXED: Dynamic Amount Table Rendering logic  */}
                         <td className="p-4 text-purple-400 font-mono no-print">
-                          ₹{guest.amount || 0}
+                          {guest.isSubordinate ? (
+                            <span className="text-neutral-600">-</span>
+                          ) : guest.isCaptain && guest.tableId ? (
+                            `₹${tables.find(t => t.id === guest.tableId)?.minSpend || guest.amount || 0}`
+                          ) : (
+                            `₹${guest.amount || 0}`
+                          )}
                         </td>
+
                         <td className="p-4 font-mono text-amber-400 font-bold tracking-widest">
                           {guest.entryCode || "N/A"}
                         </td>
@@ -724,7 +779,7 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td className="p-4 flex justify-center items-center gap-3 no-print">
-                           {(guest.rsvpStatus === 'Need Verification' || guest.screenshot) && (
+                           {(guest.rsvpStatus === 'Need Verification' || guest.screenshot) && !guest.isSubordinate && (
                              <button 
                                onClick={() => openVerifyModal(guest)} 
                                className="text-blue-400 hover:text-white" 
@@ -761,7 +816,7 @@ export default function AdminDashboard() {
                            </button>
                            
                            <button 
-                             onClick={() => handleDelete(guest._id, guest.firstName)} 
+                             onClick={() => handleDelete(guest.id || guest._id, guest.firstName)} 
                              className="text-neutral-500 hover:text-red-500" 
                              title="Delete"
                            >
@@ -778,10 +833,8 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* --- ALL MODALS --- */}
       <AnimatePresence>
         
-        {/* 🚀 NEW: CREATE EVENT MODAL */}
         {isEventModalOpen && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
             <motion.div 
@@ -853,7 +906,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 🚀 QR SCANNER MODAL */}
         {isScannerOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md no-print">
             <motion.div 
@@ -931,7 +983,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ADD/EDIT MODAL */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
             <motion.div 
@@ -1020,7 +1071,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* VERIFY PAYMENT MODAL */}
         {isVerifyModalOpen && selectedGuest && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
             <motion.div 
@@ -1078,14 +1128,11 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* 🚀 HIDDEN HD CONCERT TICKET FOR EXPORT */}
       <div className="fixed -top-[9999px] -left-[9999px] no-print">
         {downloadingGuest && (
           <div id="admin-concert-ticket-export" className="flex w-[800px] h-[300px] bg-neutral-950 text-white font-sans overflow-hidden border border-amber-500/30 rounded-xl relative shadow-2xl">
-            {/* Background Glow */}
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-black to-black opacity-80"></div>
             
-            {/* Left Side: Event & Guest Info */}
             <div className="w-[580px] p-8 flex flex-col justify-between relative z-10 border-r-2 border-dashed border-neutral-700">
                <div>
                   <h3 className="text-amber-500 tracking-[0.3em] uppercase text-xs font-bold mb-2">
@@ -1115,14 +1162,18 @@ export default function AdminDashboard() {
                      <p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Time</p>
                      <p className="font-bold text-white tracking-wide">{settings.eventTime || "TBA"}</p>
                   </div>
-                  <div>
-                     <p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Venue</p>
-                     <p className="font-bold text-white tracking-wide truncate max-w-[150px]">{settings.eventVenue || "TBA"}</p>
-                  </div>
+                  
+                  {downloadingGuest.tableId && (
+                    <div>
+                       <p className="text-amber-500 text-xs uppercase tracking-wider mb-1">VIP Table</p>
+                       <p className="font-bold text-amber-400 tracking-wide">
+                         {tables.find(t => t.id === downloadingGuest.tableId)?.tableName || "Reserved"}
+                       </p>
+                    </div>
+                  )}
                </div>
             </div>
 
-            {/* Right Side: Tear-off Stub & QR */}
             <div className="w-[220px] bg-amber-500/5 p-6 flex flex-col items-center justify-center relative z-10">
                <p className="text-amber-500 text-sm font-bold tracking-[0.2em] mb-4 text-center">
                  SCAN AT GATE

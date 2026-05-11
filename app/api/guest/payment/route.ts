@@ -22,7 +22,6 @@ export async function POST(req: Request) {
       guestId = snapshot.docs[0].id;
     }
 
-    // 🚀 Get Captain's data to copy Event ID for Sub-ordinates
     const captainDoc = await getDoc(doc(db, "guests", guestId));
     let eventId = "";
     if (captainDoc.exists()) {
@@ -32,47 +31,39 @@ export async function POST(req: Request) {
     const guestRef = doc(db, "guests", guestId);
     const updateData: any = {
       screenshot: screenshot,
-      rsvpStatus: "Need Verification", // Admin pehle payment verify karega
+      rsvpStatus: "Need Verification", 
       isCaptain: isCaptain || false
     };
 
     if (tableId) {
       updateData.tableId = tableId;
-      
-      // Update Table Status
       const tableRef = doc(db, "tables", tableId);
       await updateDoc(tableRef, {
-        status: "Requested", // Jab admin payment verify karega toh "Booked" ho jayega
+        status: "Requested",
         bookedBy: guestId
       });
     }
 
     await updateDoc(guestRef, updateData);
 
-    // 🚀 MAGIC: Sub-ordinates ki entry automatically banao
+    // 🚀 NEW LOGIC: Ab Sub-ordinates ka direct First Name aur Last Name DB me jayega
     if (isCaptain && Array.isArray(subOrdinates) && subOrdinates.length > 0) {
       const guestsCol = collection(db, "guests");
       
       for (const sub of subOrdinates) {
-        // Name ko split karna (First Name aur Last Name ke liye)
-        const nameParts = sub.name.trim().split(" ");
-        const subFirstName = nameParts[0] || "Guest";
-        const subLastName = nameParts.slice(1).join(" ") || "";
-
         const newSubGuest = {
           eventId: eventId,
-          firstName: subFirstName,
-          lastName: subLastName,
+          firstName: sub.firstName || "Guest",
+          lastName: sub.lastName || "",
           mobileNumber: sub.phone,
           isSubordinate: true,
-          hostId: guestId, // Captain ki ID
+          hostId: guestId, 
           tableId: tableId || null,
-          rsvpStatus: "Need Verification", // Captain ke sath verify hoga
-          screenshot: screenshot, // Same screenshot taaki admin cross-check kar sake
+          rsvpStatus: "Need Verification", 
+          screenshot: screenshot, 
           createdAt: new Date().toISOString(),
           source: "table_booking_pax"
         };
-
         await addDoc(guestsCol, newSubGuest);
       }
     }

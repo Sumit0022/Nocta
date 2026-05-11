@@ -1,6 +1,5 @@
 "use client";
 
-// 🚀 NEXT.JS BUILD FIX: Page ko dynamic mark kiya taaki Vercel prerender na kare
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, Suspense } from "react";
@@ -9,7 +8,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Crown, Users, ArrowRight, UserPlus, Loader2 } from "lucide-react";
 import GlassCard from "@/components/atoms/GlassCard";
 
-// 🚀 Naya Component jismein saara logic hai
 function TableBookingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -21,7 +19,8 @@ function TableBookingContent() {
 
   const [tables, setTables] = useState<any[]>([]);
   const [selectedTable, setSelectedTable] = useState<any>(null);
-  const [subOrdinates, setSubOrdinates] = useState<{name: string, phone: string}[]>([]);
+  // 🚀 FIXED: Ab Name ki jagah First Name aur Last Name store hoga
+  const [subOrdinates, setSubOrdinates] = useState<{firstName: string, lastName: string, phone: string}[]>([]);
 
   useEffect(() => {
     if(!eventId) return;
@@ -43,7 +42,7 @@ function TableBookingContent() {
     }
     setSelectedTable(table);
     const paxCount = table.capacity - 1; 
-    setSubOrdinates(Array(paxCount).fill({ name: "", phone: "" }));
+    setSubOrdinates(Array(paxCount).fill({ firstName: "", lastName: "", phone: "" }));
   };
 
   const handleSubOrdinateChange = (index: number, field: string, value: string) => {
@@ -54,8 +53,8 @@ function TableBookingContent() {
 
   const proceedToPayment = () => {
     if (selectedTable) {
-      const incomplete = subOrdinates.some(sub => !sub.name || !sub.phone);
-      if (incomplete) return alert("Please fill details for all your Sub-ordinates to issue their passes.");
+      const incomplete = subOrdinates.some(sub => !sub.firstName || !sub.lastName || !sub.phone);
+      if (incomplete) return alert("Please fill complete details (First & Last Name) for all Sub-ordinates to issue their passes.");
       
       localStorage.setItem("pendingTable", JSON.stringify({ table: selectedTable, subOrdinates }));
     } else {
@@ -99,16 +98,22 @@ function TableBookingContent() {
               <h3 className="text-lg font-bold text-amber-500 mb-2 flex items-center gap-2"><Crown className="w-5 h-5"/> You are the Captain</h3>
               <p className="text-sm text-zinc-400 mb-6 border-b border-white/10 pb-4">Please provide details for the remaining {subOrdinates.length} guests (Sub-ordinates) joining your table. They will receive individual entry QR codes linked to your table.</p>
               
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {subOrdinates.map((sub, idx) => (
-                  <div key={idx} className="flex flex-col sm:flex-row gap-3">
-                    <div className="flex-1 relative">
-                      <UserPlus className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                      <input type="text" placeholder={`Guest ${idx + 1} Name`} value={sub.name} onChange={(e) => handleSubOrdinateChange(idx, "name", e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm text-white outline-none focus:border-amber-500/50" />
+                  <div key={idx} className="flex flex-col gap-3 pb-4 border-b border-white/5 last:border-0 last:pb-0">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500">Guest {idx + 1}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="relative">
+                        <UserPlus className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                        <input type="text" placeholder="First Name" value={sub.firstName} onChange={(e) => handleSubOrdinateChange(idx, "firstName", e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm text-white outline-none focus:border-amber-500/50" />
+                      </div>
+                      <div className="relative">
+                        <input type="text" placeholder="Last Name" value={sub.lastName} onChange={(e) => handleSubOrdinateChange(idx, "lastName", e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-4 text-sm text-white outline-none focus:border-amber-500/50" />
+                      </div>
                     </div>
-                    <div className="flex-1 relative">
+                    <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">+91</span>
-                      <input type="text" maxLength={10} placeholder={`Mobile Number`} value={sub.phone} onChange={(e) => handleSubOrdinateChange(idx, "phone", e.target.value.replace(/[^0-9]/g, ''))} className="w-full bg-black/50 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm text-white outline-none focus:border-amber-500/50" />
+                      <input type="text" maxLength={10} placeholder="Mobile Number" value={sub.phone} onChange={(e) => handleSubOrdinateChange(idx, "phone", e.target.value.replace(/[^0-9]/g, ''))} className="w-full bg-black/50 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm text-white outline-none focus:border-amber-500/50" />
                     </div>
                   </div>
                 ))}
@@ -132,12 +137,10 @@ function TableBookingContent() {
   );
 }
 
-// 🚀 MAIN EXPORT: Yahan Suspense wrapper lagaya hai
 export default function TableBookingPage() {
   return (
     <main className="min-h-screen w-full bg-[#050505] flex flex-col items-center justify-center px-4 py-12 text-white relative">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-900/10 via-black to-black -z-10" />
-      
       <Suspense fallback={<div className="flex items-center justify-center"><Loader2 className="animate-spin w-8 h-8 text-amber-500" /></div>}>
         <TableBookingContent />
       </Suspense>

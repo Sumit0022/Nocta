@@ -6,7 +6,7 @@ import jsPDF from "jspdf";
 import { toPng } from "html-to-image"; 
 import { motion } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
-import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download } from "lucide-react";
+import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download, Crown } from "lucide-react"; // 🚀 Added Crown icon
 import { toast } from "sonner";
 
 export default function DashboardPage() {
@@ -14,34 +14,51 @@ export default function DashboardPage() {
   const [entryCode, setEntryCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [eventDetails, setEventDetails] = useState<any>(null);
+  
+  // 🚀 NEW: State to store VIP Table Name
+  const [tableName, setTableName] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchAllData = async () => {
       const params = new URLSearchParams(window.location.search);
       const fName = params.get("firstName");
       const lName = params.get("lastName");
-      const eId = params.get("eventId"); // 🚀 THE MAGIC: URL se eventId pakda
+      const eId = params.get("eventId"); 
       
       try {
+        let fetchedTableId = null;
+
         if (fName && lName) {
           setGuestName(`${fName} ${lName}`);
-          // 🚀 THE MAGIC: API call mein eventId add kar diya
           const guestRes = await fetch(`/api/guest/details?firstName=${fName}&lastName=${lName}&eventId=${eId || ""}`, { cache: "no-store" });
           const guestResult = await guestRes.json();
-          if (guestResult.success) setEntryCode(guestResult.data.entryCode || "N/A");
+          if (guestResult.success) {
+            setEntryCode(guestResult.data.entryCode || "N/A");
+            fetchedTableId = guestResult.data.tableId; // 🚀 Guest ki table ID catch kar li
+          }
         }
 
         const settingsRes = await fetch('/api/admin/settings', { cache: "no-store" });
         const settingsResult = await settingsRes.json();
         
-        // 🚀 THE MAGIC: Saari parties (array) mein se specific event dhundo
         if (settingsResult.success && Array.isArray(settingsResult.data)) {
           const currentEvent = settingsResult.data.find((e: any) => e.eventId === eId);
           if (currentEvent) {
             setEventDetails(currentEvent);
           } else if (settingsResult.data.length > 0) {
-            // Agar id na mile toh fallback pehli party par
             setEventDetails(settingsResult.data[0]);
+          }
+        }
+
+        // 🚀 NEW: Agar guest ke paas Table ID hai, toh Table ka naam fetch karo
+        if (fetchedTableId && eId) {
+          const tablesRes = await fetch(`/api/admin/tables?eventId=${eId}`, { cache: "no-store" });
+          const tablesResult = await tablesRes.json();
+          if (tablesResult.success && Array.isArray(tablesResult.data)) {
+            const foundTable = tablesResult.data.find((t: any) => t.id === fetchedTableId);
+            if (foundTable) {
+              setTableName(foundTable.tableName);
+            }
           }
         }
 
@@ -54,7 +71,6 @@ export default function DashboardPage() {
     fetchAllData();
   }, []);
 
-  // 🚀 VIP PASS DOWNLOAD FUNCTION (A5 ki jagah Custom Exact Ticket Size)
   const downloadVIPPass = async () => {
     const ticketElement = document.getElementById("vip-pass-card");
     if (!ticketElement) {
@@ -67,7 +83,6 @@ export default function DashboardPage() {
     try {
       window.scrollTo(0, 0); 
 
-      // Ticket ki exact height aur width nikalna taaki kuch na kate
       const eleWidth = ticketElement.scrollWidth;
       const eleHeight = ticketElement.scrollHeight;
 
@@ -76,10 +91,9 @@ export default function DashboardPage() {
         pixelRatio: 2, 
         cacheBust: true,
         width: eleWidth,
-        height: eleHeight, // 🚀 Force full height capture
+        height: eleHeight, 
       });
 
-      // 🚀 THE MAGIC: PDF ka page ab A5 nahi, balki exact ticket ke size ka hoga
       const pdf = new jsPDF({
         orientation: "p",
         unit: "px",
@@ -110,7 +124,6 @@ export default function DashboardPage() {
               <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-amber-400" />
               <h1 className="text-2xl font-light tracking-wide">VIP PASS GRANTED</h1>
               <h2 className="text-lg font-medium mt-2 capitalize">{guestName}</h2>
-              {/* Event Title dikha do taaki premium lage */}
               <p className="text-xs text-amber-400/80 mt-1 uppercase tracking-widest">{eventDetails?.mainTitle || ""}</p>
             </div>
 
@@ -137,6 +150,17 @@ export default function DashboardPage() {
                     <p className="font-medium">{eventDetails?.eventVenue || "Loading..."}</p>
                   </div>
                 </div>
+
+                {/* 🚀 NEW: Yahan dikhegi VIP Table agar usne book ki hogi */}
+                {tableName && (
+                  <div className="flex items-center gap-4 text-amber-400 pt-3 border-t border-white/5">
+                    <Crown className="w-5 h-5 text-amber-500" />
+                    <div>
+                      <p className="text-xs text-amber-500/70 uppercase tracking-widest">Table ID</p>
+                      <p className="font-bold text-lg tracking-wide">{tableName}</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="pt-6 border-t border-white/10 text-center">
