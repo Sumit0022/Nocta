@@ -47,7 +47,7 @@ export default function AdminDashboard() {
   const [crmData, setCrmData] = useState<any[]>([]);
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmSearchQuery, setCrmSearchQuery] = useState("");
-  const [expandedCrmGuest, setExpandedCrmGuest] = useState<string | null>(null); // Kundali Track State
+  const [expandedCrmGuest, setExpandedCrmGuest] = useState<string | null>(null);
 
   const [settings, setSettings] = useState({
     upiId: "", 
@@ -295,6 +295,34 @@ export default function AdminDashboard() {
     }
   };
 
+  // 🚀 CRM MASTER DELETE LOGIC
+  const handleCrmDelete = async (mobileNumber: string, name: string) => {
+    if (!mobileNumber) return;
+    
+    if (confirm(`⚠️ WARNING: Are you sure you want to COMPLETELY wipe ${name} and their entire history from the database? This action cannot be undone!`)) {
+      const toastId = toast.loading("Wiping guest data...");
+      try {
+        const res = await fetch('/api/admin/crm/delete', { 
+          method: 'DELETE', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ mobileNumber }) 
+        });
+        
+        if (res.status === 401) router.push('/admin/login');
+        
+        if (res.ok) {
+          toast.success(`${name} has been completely deleted.`, { id: toastId });
+          fetchCrmData(); 
+          fetchGuestsAndTables(activeEventId); // Taki background view bhi refresh ho jaye
+        } else {
+          toast.error("Failed to delete guest", { id: toastId });
+        }
+      } catch (error) {
+        toast.error("Network error while deleting", { id: toastId });
+      }
+    }
+  };
+
   // 🚀 PHASE 2: BLACKLIST TOGGLE LOGIC
   const toggleBlacklist = async (mobileNumber: string, isBlacklisted: boolean) => {
     const action = isBlacklisted ? "remove" : "add";
@@ -314,7 +342,7 @@ export default function AdminDashboard() {
       const result = await res.json();
       if (result.success) {
         toast.success(result.message, { id: toastId });
-        fetchCrmData(); // Refresh CRM list instantly
+        fetchCrmData(); 
       } else {
         toast.error(result.error, { id: toastId });
       }
@@ -933,10 +961,19 @@ export default function AdminDashboard() {
                               className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                                 guest.isBlacklisted 
                                   ? 'bg-neutral-800 border-neutral-600 text-neutral-300 hover:bg-neutral-700' 
-                                  : 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
+                                  : 'bg-orange-500/10 border-orange-500/20 text-orange-400 hover:bg-orange-500/20'
                               }`}
                             >
                               {guest.isBlacklisted ? "Unban" : <><UserX className="w-3 h-3"/> Ban</>}
+                            </button>
+
+                            {/* 🚀 NEW: MASTER CRM DELETE BUTTON */}
+                            <button 
+                              onClick={() => handleCrmDelete(guest.mobileNumber, guest.firstName)}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20"
+                              title="Delete all history"
+                            >
+                              <Trash2 className="w-3 h-3"/> Delete
                             </button>
                           </td>
                         </tr>
