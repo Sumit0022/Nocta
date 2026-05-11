@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react"; // 🚀 FIXED: useMemo import kiya sorting ke liye
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
@@ -9,6 +9,21 @@ import { ArrowRight, Loader2, KeyRound, CheckCircle2, Ticket, ChevronDown } from
 // 🚀 FIREBASE IMPORTS
 import { auth } from "@/lib/firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+
+// 🚀 PHASE 1: EVENT LIFECYCLE LOGIC (Ultra-safe date parsing)
+const getEventStatus = (dateStr: string, timeStr: string) => {
+  if (!dateStr || !timeStr) return "Active"; 
+  const eventDateTime = new Date(`${dateStr}T${timeStr}`);
+  if (isNaN(eventDateTime.getTime())) return "Active"; 
+  const lockTime = new Date(eventDateTime.getTime() + 18 * 60 * 60 * 1000);
+  return new Date() > lockTime ? "Completed" : "Active";
+};
+
+const getSafeTime = (dateStr: string, timeStr: string) => {
+  if (!dateStr || !timeStr) return 0;
+  const t = new Date(`${dateStr}T${timeStr}`).getTime();
+  return isNaN(t) ? 0 : t;
+};
 
 export default function VerifyPage() {
   const router = useRouter();
@@ -40,6 +55,8 @@ export default function VerifyPage() {
     const fetchEvents = async () => {
       try {
         const res = await fetch('/api/admin/settings');
+        // Fallback catch taaki HTML error aaye toh frontend crash na ho
+        if (!res.ok) throw new Error("API Route Failed"); 
         const result = await res.json();
         if (result.success && Array.isArray(result.data)) {
           setAllEvents(result.data);
@@ -52,6 +69,14 @@ export default function VerifyPage() {
     };
     fetchEvents();
   }, []);
+
+  // 🚀 PHASE 1: FILTER ONLY ACTIVE EVENTS FOR PUBLIC DROPDOWN
+  const activeEvents = useMemo(() => {
+    const active = allEvents.filter(e => getEventStatus(e.eventDate, e.eventTime) === "Active");
+    // Sort so the closest upcoming event is on top
+    active.sort((a, b) => getSafeTime(a.eventDate, a.eventTime) - getSafeTime(b.eventDate, b.eventTime));
+    return active;
+  }, [allEvents]);
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,7 +180,6 @@ export default function VerifyPage() {
         router.push('/status');
       } 
       else {
-        // YAHAN CHANGE KAREIN 👇
         router.push(`/table-booking?firstName=${firstName}&lastName=${lastName}&eventId=${selectedEventId}&guestId=${successData?.data?._id || successData?.guest?._id || ""}`); 
       }
     } catch (error) {
@@ -196,27 +220,30 @@ export default function VerifyPage() {
                 <div className="relative">
                   <div 
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                    className={`w-full bg-white/5 border ${isDropdownOpen ? 'border-amber-500/50' : 'border-white/10'} rounded-xl pl-12 pr-4 py-4 flex items-center justify-between cursor-pointer hover:bg-white/10 transition-all`}
+                    // 🚀 FIXED: Disabled styling added if no active events exist
+                    className={`w-full bg-white/5 border ${isDropdownOpen ? 'border-amber-500/50' : 'border-white/10'} rounded-xl pl-12 pr-4 py-4 flex items-center justify-between cursor-pointer hover:bg-white/10 transition-all ${activeEvents.length === 0 ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
                   >
                     <Ticket className="absolute left-4 w-5 h-5 text-amber-500" />
                     <span className={`font-medium ${selectedEventId ? "text-white" : "text-neutral-500"}`}>
+                      {/* 🚀 FIXED: Only checks activeEvents now */}
                       {selectedEventId 
-                        ? allEvents.find(e => e.eventId === selectedEventId)?.mainTitle 
-                        : "Select The Event You're Attending"}
+                        ? activeEvents.find(e => e.eventId === selectedEventId)?.mainTitle 
+                        : activeEvents.length === 0 ? "No Upcoming Events" : "Select The Event You're Attending"}
                     </span>
                     <ChevronDown className={`w-5 h-5 text-neutral-400 transition-transform duration-300 ${isDropdownOpen ? "rotate-180 text-amber-500" : ""}`} />
                   </div>
 
                   <AnimatePresence>
-                    {isDropdownOpen && (
+                    {isDropdownOpen && activeEvents.length > 0 && (
                       <motion.div
                         initial={{ opacity: 0, y: -10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -10, scale: 0.95 }}
                         transition={{ duration: 0.2 }}
-                        className="absolute w-full mt-2 bg-neutral-900 border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl"
+                        className="absolute w-full mt-2 bg-neutral-900 border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl max-h-60 overflow-y-auto"
                       >
-                        {allEvents.map((event) => (
+                        {/* 🚀 FIXED: Maps ONLY active events */}
+                        {activeEvents.map((event) => (
                           <div
                             key={event.eventId}
                             onClick={() => {

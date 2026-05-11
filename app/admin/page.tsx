@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+// 🚀 NEXT.JS BUILD FIX
+export const dynamic = 'force-dynamic';
+
+import React, { useState, useEffect, useMemo, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
@@ -9,7 +12,8 @@ import {
   Users, CheckCircle2, IndianRupee, MessageCircle, Plus, 
   Loader2, X, Edit, Eye, AlertCircle, Trash2, Search, 
   ArrowLeft, Printer, Settings, UploadCloud, Sparkles,
-  LogOut, Ticket, ScanLine, PlusCircle, Crown, User 
+  LogOut, Ticket, ScanLine, PlusCircle, Crown, User, Lock,
+  Database, ShieldAlert, UserX, UserCheck, ChevronDown, ChevronUp, History
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { QRCodeSVG } from "qrcode.react"; 
@@ -38,6 +42,12 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("Overview");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // 🚀 PHASE 2: CRM STATES
+  const [crmData, setCrmData] = useState<any[]>([]);
+  const [crmLoading, setCrmLoading] = useState(false);
+  const [crmSearchQuery, setCrmSearchQuery] = useState("");
+  const [expandedCrmGuest, setExpandedCrmGuest] = useState<string | null>(null); // Kundali Track State
 
   const [settings, setSettings] = useState({
     upiId: "", 
@@ -68,10 +78,37 @@ export default function AdminDashboard() {
     eventId: "" 
   });
 
-  // 🚀 VIP PASS & SCANNER STATES
+  // VIP PASS & SCANNER STATES
   const [downloadingGuest, setDownloadingGuest] = useState<any>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedResult, setScannedResult] = useState<any>(null);
+
+  // 🚀 PHASE 1: EVENT LIFECYCLE LOGIC (18-Hour Lock)
+  const getEventStatus = (dateStr: string, timeStr: string) => {
+    if (!dateStr || !timeStr) return "Active"; 
+    const eventDateTime = new Date(`${dateStr}T${timeStr}`);
+    if (isNaN(eventDateTime.getTime())) return "Active"; 
+    const lockTime = new Date(eventDateTime.getTime() + 18 * 60 * 60 * 1000);
+    return new Date() > lockTime ? "Completed" : "Active";
+  };
+
+  // 🚀 PHASE 1: SMART EVENT SORTING
+  const { activeEvents, completedEvents } = useMemo(() => {
+    const active: any[] = [];
+    const completed: any[] = [];
+    
+    allEvents.forEach(e => {
+      if (getEventStatus(e.eventDate, e.eventTime) === "Active") active.push(e);
+      else completed.push(e);
+    });
+    
+    active.sort((a, b) => new Date(`${a.eventDate}T${a.eventTime}`).getTime() - new Date(`${b.eventDate}T${b.eventTime}`).getTime());
+    completed.sort((a, b) => new Date(`${b.eventDate}T${b.eventTime}`).getTime() - new Date(`${a.eventDate}T${a.eventTime}`).getTime());
+    
+    return { activeEvents: active, completedEvents: completed };
+  }, [allEvents]);
+
+  const isCurrentEventActive = settings.eventDate ? getEventStatus(settings.eventDate, settings.eventTime) === "Active" : true;
 
   // --- DATA FETCHING ---
   const fetchEvents = async () => {
@@ -85,8 +122,10 @@ export default function AdminDashboard() {
       if (result.success && Array.isArray(result.data)) {
         setAllEvents(result.data);
         if (!activeEventId && result.data.length > 0) {
-          setActiveEventId(result.data[0].eventId);
-          setSettings(result.data[0]);
+          const firstActive = result.data.find((e: any) => getEventStatus(e.eventDate, e.eventTime) === "Active");
+          const targetEvent = firstActive || result.data[0];
+          setActiveEventId(targetEvent.eventId);
+          setSettings(targetEvent);
         }
       }
     } catch (error) { 
@@ -127,6 +166,22 @@ export default function AdminDashboard() {
     }
   };
 
+  // 🚀 PHASE 2: FETCH GLOBAL CRM DATA
+  const fetchCrmData = async () => {
+    setCrmLoading(true);
+    try {
+      const res = await fetch('/api/admin/crm');
+      const result = await res.json();
+      if (result.success) {
+        setCrmData(result.data || []);
+      }
+    } catch (error) {
+      toast.error("Failed to fetch CRM data");
+    } finally {
+      setCrmLoading(false);
+    }
+  };
+
   // Initial Load
   useEffect(() => { 
     fetchEvents(); 
@@ -134,14 +189,21 @@ export default function AdminDashboard() {
 
   // Event Switch Logic
   useEffect(() => {
-    if (activeEventId) {
+    if (activeEventId && view !== "CRM") {
       fetchGuestsAndTables(activeEventId); 
       const currentEvent = allEvents.find(e => e.eventId === activeEventId);
       if (currentEvent) {
         setSettings(currentEvent);
       }
     }
-  }, [activeEventId, allEvents]);
+  }, [activeEventId, allEvents, view]);
+
+  // CRM Load Logic
+  useEffect(() => {
+    if (view === "CRM") {
+      fetchCrmData();
+    }
+  }, [view]);
   
   // --- HANDLERS ---
   const handleCreateEvent = async (e: React.FormEvent) => {
@@ -230,6 +292,34 @@ export default function AdminDashboard() {
       } catch (error) {
         toast.error("Network error while deleting");
       }
+    }
+  };
+
+  // 🚀 PHASE 2: BLACKLIST TOGGLE LOGIC
+  const toggleBlacklist = async (mobileNumber: string, isBlacklisted: boolean) => {
+    const action = isBlacklisted ? "remove" : "add";
+    const confirmMsg = isBlacklisted 
+      ? `Are you sure you want to UNBAN ${mobileNumber}?` 
+      : `Are you sure you want to BLACKLIST ${mobileNumber}? They won't be able to book any future events.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    const toastId = toast.loading("Processing...");
+    try {
+      const res = await fetch('/api/admin/blacklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobileNumber, action, reason: "Admin Discretion" })
+      });
+      const result = await res.json();
+      if (result.success) {
+        toast.success(result.message, { id: toastId });
+        fetchCrmData(); // Refresh CRM list instantly
+      } else {
+        toast.error(result.error, { id: toastId });
+      }
+    } catch (err) {
+      toast.error("Network error while updating blacklist", { id: toastId });
     }
   };
 
@@ -410,6 +500,16 @@ export default function AdminDashboard() {
     return sortedList;
   }, [guests, view, searchQuery]);
 
+  // 🚀 PHASE 2: Filter CRM Data
+  const filteredCrmData = useMemo(() => {
+    if (!crmSearchQuery) return crmData;
+    const query = crmSearchQuery.toLowerCase().trim();
+    return crmData.filter(g => 
+      `${g.firstName || ""} ${g.lastName || ""}`.toLowerCase().includes(query) || 
+      String(g.mobileNumber || "").toLowerCase().includes(query)
+    );
+  }, [crmData, crmSearchQuery]);
+
   const revenueReceived = guests.filter(g => g.rsvpStatus === "Confirmed" || g.rsvpStatus === "Checked-In").reduce((sum, g) => {
     if (g.isSubordinate) return sum; 
     const guestTable = tables.find(t => t.id === g.tableId);
@@ -445,7 +545,6 @@ export default function AdminDashboard() {
   ];
 
   return (
-    // 🚀 RESPONSIVE FIX: Adjusted padding for mobile screens (p-4 md:p-10)
     <main className="min-h-screen w-full p-4 sm:p-6 md:p-10 relative text-white overflow-x-hidden">
       <style dangerouslySetInnerHTML={{__html: `
         @media print { 
@@ -475,51 +574,66 @@ export default function AdminDashboard() {
                 </button>
               )}
               <h1 className="text-2xl sm:text-3xl font-light tracking-wide">
-                {view === "Overview" ? "Command Center" : view === "Settings" ? "Platform Settings" : `${view} List`}
+                {/* 🚀 Dynamic Header Title */}
+                {view === "Overview" ? "Command Center" : view === "Settings" ? "Platform Settings" : view === "CRM" ? "Master Guest Database" : `${view} List`}
               </h1>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 mt-1">
-              <div className="bg-white/5 border border-white/10 rounded-full pl-4 pr-3 py-1.5 flex items-center gap-3 w-full sm:w-auto">
-                <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                <select 
-                  value={activeEventId} 
-                  onChange={(e) => setActiveEventId(e.target.value)}
-                  className="bg-transparent text-sm outline-none cursor-pointer font-medium text-neutral-300 focus:text-white w-full"
+            {view !== "CRM" && (
+              <div className="flex flex-wrap items-center gap-3 mt-1">
+                <div className="bg-white/5 border border-white/10 rounded-full pl-4 pr-3 py-1.5 flex items-center gap-3 w-full sm:w-auto">
+                  <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <select 
+                    value={activeEventId} 
+                    onChange={(e) => setActiveEventId(e.target.value)}
+                    className="bg-transparent text-sm outline-none cursor-pointer font-medium text-neutral-300 focus:text-white w-full"
+                  >
+                    {allEvents.length === 0 && <option value="">No Active Event</option>}
+                    {activeEvents.length > 0 && (
+                      <optgroup label="🟢 Active & Upcoming" className="text-green-500 bg-neutral-900 font-bold">
+                        {activeEvents.map((e) => (
+                          <option key={e.eventId} value={e.eventId} className="text-white font-medium">
+                            {e.mainTitle} ({e.eventId})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {completedEvents.length > 0 && (
+                      <optgroup label="🔒 Past / Completed" className="text-red-400 bg-neutral-900 font-bold mt-2">
+                        {completedEvents.map((e) => (
+                          <option key={e.eventId} value={e.eventId} className="text-neutral-400 font-medium">
+                            {e.mainTitle} (Locked)
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+                <button 
+                  onClick={() => setIsEventModalOpen(true)} 
+                  className="p-1.5 hover:bg-white/10 rounded-full text-amber-400 transition-colors" 
+                  title="Create New Event"
                 >
-                  {allEvents.length === 0 && <option value="">No Active Event</option>}
-                  {allEvents.map((e) => (
-                    <option key={e.eventId} value={e.eventId} className="bg-neutral-900">
-                      {e.mainTitle} ({e.eventId})
-                    </option>
-                  ))}
-                </select>
+                  <PlusCircle className="w-6 h-6" />
+                </button>
               </div>
-              <button 
-                onClick={() => setIsEventModalOpen(true)} 
-                className="p-1.5 hover:bg-white/10 rounded-full text-amber-400 transition-colors" 
-                title="Create New Event"
-              >
-                <PlusCircle className="w-6 h-6" />
-              </button>
-            </div>
+            )}
           </div>
           
-          {/* 🚀 RESPONSIVE FIX: Added flex-wrap and w-full adjustments for mobile buttons */}
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
             {view !== "Settings" && (
               <div className="relative w-full sm:w-auto flex-grow sm:flex-grow-0 mb-2 sm:mb-0">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
                 <input 
                   type="text" 
-                  placeholder="Search..." 
+                  placeholder={view === "CRM" ? "Search by name or number..." : "Search..."}
                   className="bg-white/5 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm outline-none focus:border-white/30 w-full sm:w-48 md:w-64" 
-                  onChange={(e) => setSearchQuery(e.target.value)} 
+                  onChange={(e) => view === "CRM" ? setCrmSearchQuery(e.target.value) : setSearchQuery(e.target.value)} 
                 />
               </div>
             )}
             
-            {view !== "Overview" && view !== "Settings" && (
+            {view !== "Overview" && view !== "Settings" && view !== "CRM" && (
               <button 
                 onClick={() => window.print()} 
                 className="flex items-center gap-2 bg-purple-500/20 text-purple-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-500/30 no-print flex-grow sm:flex-grow-0 justify-center"
@@ -528,27 +642,43 @@ export default function AdminDashboard() {
               </button>
             )}
 
-            <button 
-              onClick={() => setIsScannerOpen(true)} 
-              className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 shadow-[0_0_15px_rgba(251,191,36,0.15)] transition-all flex-grow sm:flex-grow-0 justify-center"
-            >
-              <ScanLine className="w-4 h-4" /> Scan Pass
-            </button>
+            {/* 🚀 PHASE 2: CRM NAVIGATION BUTTON */}
+            {view !== "CRM" && (
+              <button 
+                onClick={() => setView("CRM")} 
+                className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-500/20 transition-all flex-grow sm:flex-grow-0 justify-center"
+              >
+                <Database className="w-4 h-4" /> Global CRM
+              </button>
+            )}
 
-            <button 
-              onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)}
-              className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 transition-all shadow-[0_0_15px_rgba(251,191,36,0.2)] flex-grow sm:flex-grow-0 justify-center"
-            >
-              Manage Tables
-            </button>
+            {view !== "CRM" && isCurrentEventActive && (
+              <button 
+                onClick={() => setIsScannerOpen(true)} 
+                className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 shadow-[0_0_15px_rgba(251,191,36,0.15)] transition-all flex-grow sm:flex-grow-0 justify-center"
+              >
+                <ScanLine className="w-4 h-4" /> Scan Pass
+              </button>
+            )}
 
-            <button 
-              onClick={() => setView("Settings")} 
-              className="p-2 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors" 
-              title="Settings"
-            >
-              <Settings className="w-5 h-5 text-neutral-400" />
-            </button>
+            {view !== "CRM" && (
+              <button 
+                onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)}
+                className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 transition-all shadow-[0_0_15px_rgba(251,191,36,0.2)] flex-grow sm:flex-grow-0 justify-center"
+              >
+                Manage Tables
+              </button>
+            )}
+
+            {view !== "CRM" && (
+              <button 
+                onClick={() => setView("Settings")} 
+                className="p-2 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors" 
+                title="Settings"
+              >
+                <Settings className="w-5 h-5 text-neutral-400" />
+              </button>
+            )}
 
             <button 
               onClick={handleLogout} 
@@ -558,19 +688,33 @@ export default function AdminDashboard() {
               <LogOut className="w-5 h-5" />
             </button>
 
-            <button 
-              onClick={() => {
-                setIsEditing(false); 
-                setFormData({ _id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending", eventId: activeEventId }); 
-                setIsModalOpen(true);
-              }} 
-              className="flex items-center gap-2 bg-white text-neutral-950 px-4 py-2 rounded-lg text-sm font-medium hover:bg-neutral-200 flex-grow sm:flex-grow-0 justify-center"
-            >
-              <Plus className="w-4 h-4" /> Add Guest
-            </button>
+            {view !== "CRM" && isCurrentEventActive && (
+              <button 
+                onClick={() => {
+                  setIsEditing(false); 
+                  setFormData({ _id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending", eventId: activeEventId }); 
+                  setIsModalOpen(true);
+                }} 
+                className="flex items-center gap-2 bg-white text-neutral-950 px-4 py-2 rounded-lg text-sm font-medium hover:bg-neutral-200 flex-grow sm:flex-grow-0 justify-center"
+              >
+                <Plus className="w-4 h-4" /> Add Guest
+              </button>
+            )}
           </div>
         </div>
 
+        {/* 🚀 PHASE 1: COMPLETED EVENT RED BANNER */}
+        {view !== "CRM" && !isCurrentEventActive && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-4 no-print shadow-[0_0_20px_rgba(239,68,68,0.1)]">
+             <div className="bg-red-500/20 p-2 rounded-full flex-shrink-0 mt-0.5"><Lock className="w-5 h-5 text-red-400" /></div>
+             <div>
+                <h3 className="text-red-400 font-bold text-lg tracking-wide uppercase">Event Completed & Locked</h3>
+                <p className="text-neutral-400 text-sm mt-1 leading-relaxed">This event commenced over 18 hours ago and is now permanently locked to protect historical data. You cannot add new guests, scan passes, or edit details. You can only view and export the data.</p>
+             </div>
+          </motion.div>
+        )}
+
+        {/* --- SETTINGS VIEW --- */}
         {view === "Settings" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 no-print animate-in fade-in duration-500">
             
@@ -583,52 +727,57 @@ export default function AdminDashboard() {
                 <div>
                   <label className="text-xs text-neutral-500 uppercase">Title</label>
                   <input 
+                    disabled={!isCurrentEventActive}
                     value={settings.mainTitle} 
                     onChange={(e) => setSettings({...settings, mainTitle: e.target.value})} 
-                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30" 
+                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" 
                   />
                 </div>
                 <div>
                   <label className="text-xs text-neutral-500 uppercase">Headline</label>
                   <input 
+                    disabled={!isCurrentEventActive}
                     value={settings.mainHeadline} 
                     onChange={(e) => setSettings({...settings, mainHeadline: e.target.value})} 
-                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30" 
+                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" 
                   />
                 </div>
-                {/* 🚀 RESPONSIVE FIX: sm:grid-cols-2 added for mobile stacking */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs text-neutral-500 uppercase">Date</label>
                     <input 
+                      disabled={!isCurrentEventActive}
                       value={settings.eventDate} 
                       onChange={(e) => setSettings({...settings, eventDate: e.target.value})} 
-                      className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30" 
+                      className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" 
                     />
                   </div>
                   <div>
                     <label className="text-xs text-neutral-500 uppercase">Time</label>
                     <input 
+                      disabled={!isCurrentEventActive}
                       value={settings.eventTime} 
                       onChange={(e) => setSettings({...settings, eventTime: e.target.value})} 
-                      className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30" 
+                      className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" 
                     />
                   </div>
                 </div>
                 <div>
                   <label className="text-xs text-neutral-500 uppercase">Venue</label>
                   <input 
+                    disabled={!isCurrentEventActive}
                     value={settings.eventVenue} 
                     onChange={(e) => setSettings({...settings, eventVenue: e.target.value})} 
-                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30" 
+                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" 
                   />
                 </div>
                 <div>
                   <label className="text-xs text-neutral-500 uppercase">Vibe</label>
                   <input 
+                    disabled={!isCurrentEventActive}
                     value={settings.eventVibe} 
                     onChange={(e) => setSettings({...settings, eventVibe: e.target.value})} 
-                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30" 
+                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" 
                   />
                 </div>
               </div>
@@ -644,9 +793,10 @@ export default function AdminDashboard() {
                   <div>
                     <label className="text-xs text-neutral-500 uppercase">UPI ID</label>
                     <input 
+                      disabled={!isCurrentEventActive}
                       value={settings.upiId} 
                       onChange={(e) => setSettings({...settings, upiId: e.target.value})} 
-                      className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 text-white" 
+                      className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 text-white disabled:opacity-50" 
                     />
                   </div>
                   <div>
@@ -659,11 +809,13 @@ export default function AdminDashboard() {
                           <X className="text-neutral-500" />
                         )}
                       </div>
-                      <label className="flex-1 w-full border-2 border-dashed border-white/20 rounded-lg p-4 text-center cursor-pointer hover:bg-white/5 flex flex-col items-center justify-center">
-                        <UploadCloud className="w-6 h-6 mb-1 text-neutral-500" />
-                        <span className="text-xs text-neutral-500 italic">Change QR</span>
-                        <input type="file" className="hidden" onChange={handleQrUpload} />
-                      </label>
+                      {isCurrentEventActive && (
+                        <label className="flex-1 w-full border-2 border-dashed border-white/20 rounded-lg p-4 text-center cursor-pointer hover:bg-white/5 flex flex-col items-center justify-center">
+                          <UploadCloud className="w-6 h-6 mb-1 text-neutral-500" />
+                          <span className="text-xs text-neutral-500 italic">Change QR</span>
+                          <input type="file" className="hidden" onChange={handleQrUpload} />
+                        </label>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -671,16 +823,17 @@ export default function AdminDashboard() {
               
               <button 
                 onClick={saveSettings} 
-                disabled={savingSettings} 
-                className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold flex justify-center items-center gap-3 transition-colors text-white shadow-xl shadow-blue-900/20"
+                disabled={savingSettings || !isCurrentEventActive} 
+                className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold flex justify-center items-center gap-3 transition-colors text-white shadow-xl shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {savingSettings ? <Loader2 className="animate-spin w-5 h-5" /> : "Publish All Changes"}
+                {savingSettings ? <Loader2 className="animate-spin w-5 h-5" /> : isCurrentEventActive ? "Publish All Changes" : "Locked (Cannot Edit)"}
               </button>
             </div>
 
           </div>
         )}
 
+        {/* --- STATS GRID --- */}
         {view === "Overview" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 no-print animate-in fade-in duration-500">
             {stats.map((stat, i) => (
@@ -714,8 +867,144 @@ export default function AdminDashboard() {
             </GlassCard>
           </div>
         )}
+
+        {/* 🚀 PHASE 2: MASTER CRM TABLE WITH KUNDALI */}
+        {view === "CRM" && (
+          <GlassCard className="p-0 overflow-hidden table-container border-white/10 animate-in fade-in duration-700">
+            <div className="p-4 sm:p-6 border-b border-white/10 font-medium no-print flex justify-between items-center bg-indigo-500/5">
+              <span className="text-sm sm:text-base text-indigo-400 flex items-center gap-2">
+                <Database className="w-5 h-5"/> Global Customer Database
+              </span>
+              {crmLoading && <Loader2 className="animate-spin w-4 h-4 text-indigo-400 flex-shrink-0" />}
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left whitespace-nowrap min-w-[800px]">
+                <thead className="text-xs text-neutral-400 uppercase tracking-widest border-b border-white/5 bg-white/5">
+                  <tr>
+                    <th className="p-4">Mobile Number</th>
+                    <th className="p-4">Name (Last Recorded)</th>
+                    <th className="p-4">Total Value</th>
+                    <th className="p-4">Events</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4 text-center">Admin Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm">
+                  {filteredCrmData.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-neutral-500 italic">
+                        No CRM records found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCrmData.map((guest, idx) => (
+                      <Fragment key={idx}>
+                        <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                          <td className="p-4 font-mono font-medium">{guest.mobileNumber}</td>
+                          <td className="p-4 capitalize text-neutral-300">{guest.firstName} {guest.lastName}</td>
+                          <td className="p-4 text-emerald-400 font-mono">₹{guest.totalSpent}</td>
+                          <td className="p-4">
+                            <span className="bg-white/10 px-2 py-1 rounded text-xs">{guest.eventsAttended?.length || 0} events</span>
+                          </td>
+                          <td className="p-4">
+                            {guest.isBlacklisted ? (
+                              <span className="bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest flex items-center gap-1 w-fit">
+                                <ShieldAlert className="w-3 h-3"/> Blacklisted
+                              </span>
+                            ) : (
+                              <span className="bg-green-500/10 border border-green-500/20 text-green-400 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest flex items-center gap-1 w-fit">
+                                <UserCheck className="w-3 h-3"/> Active
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4 flex justify-center items-center gap-2">
+                            {/* KUNDALI BUTTON */}
+                            <button 
+                              onClick={() => setExpandedCrmGuest(expandedCrmGuest === guest.mobileNumber ? null : guest.mobileNumber)}
+                              className="flex items-center gap-1 bg-white/5 border border-white/10 text-neutral-300 hover:bg-white/10 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                            >
+                              <History className="w-3 h-3"/> History {expandedCrmGuest === guest.mobileNumber ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>}
+                            </button>
+                            
+                            {/* BAN BUTTON */}
+                            <button 
+                              onClick={() => toggleBlacklist(guest.mobileNumber, guest.isBlacklisted)}
+                              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                                guest.isBlacklisted 
+                                  ? 'bg-neutral-800 border-neutral-600 text-neutral-300 hover:bg-neutral-700' 
+                                  : 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
+                              }`}
+                            >
+                              {guest.isBlacklisted ? "Unban" : <><UserX className="w-3 h-3"/> Ban</>}
+                            </button>
+                          </td>
+                        </tr>
+                        
+                        {/* 🚀 GUEST KUNDALI (EXPANDED ROW - LIST VIEW FORMAT) */}
+                        <AnimatePresence>
+                          {expandedCrmGuest === guest.mobileNumber && (
+                            <tr className="bg-black/40 border-b border-white/5">
+                              <td colSpan={6} className="p-0">
+                                <motion.div 
+                                  initial={{ opacity: 0, height: 0 }} 
+                                  animate={{ opacity: 1, height: "auto" }} 
+                                  exit={{ opacity: 0, height: 0 }}
+                                  className="overflow-hidden"
+                                >
+                                  <div className="p-6">
+                                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                      <History className="w-4 h-4"/> Event Attendance History
+                                    </h4>
+                                    {guest.eventsAttended?.length === 0 ? (
+                                      <p className="text-sm text-neutral-500 italic">No events recorded.</p>
+                                    ) : (
+                                      <div className="space-y-3">
+                                        {guest.eventsAttended.map((evt: any, i: number) => {
+                                          const evtDetails = allEvents.find(e => e.eventId === evt.eventId);
+                                          return (
+                                            <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                              <div className="flex flex-col">
+                                                <span className="text-sm font-bold text-white">
+                                                  {evtDetails ? evtDetails.mainTitle : evt.eventId}
+                                                </span>
+                                                <span className="text-xs text-neutral-400 mt-1 font-mono">
+                                                  {evtDetails?.eventDate ? `${evtDetails.eventDate} • ${evtDetails.eventTime || ''}` : 'Date TBA'}
+                                                </span>
+                                              </div>
+                                              <div className="flex gap-2 items-center flex-wrap">
+                                                <span className={`text-[9px] uppercase tracking-widest px-2 py-1 rounded font-bold ${
+                                                  evt.status === 'Confirmed' || evt.status === 'Checked-In' 
+                                                    ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                                                    : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+                                                }`}>
+                                                  {evt.status}
+                                                </span>
+                                                {evt.isCaptain && <span className="text-[9px] uppercase tracking-widest px-2 py-1 rounded font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1"><Crown className="w-3 h-3"/> Captain</span>}
+                                                {evt.isSubordinate && <span className="text-[9px] uppercase tracking-widest px-2 py-1 rounded font-bold bg-white/10 text-neutral-300 border border-white/20 flex items-center gap-1"><User className="w-3 h-3"/> Pax</span>}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              </td>
+                            </tr>
+                          )}
+                        </AnimatePresence>
+                      </Fragment>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+        )}
         
-        {view !== "Settings" && (
+        {/* --- EVENT GUEST TABLE --- */}
+        {view !== "Settings" && view !== "CRM" && (
           <GlassCard className="p-0 overflow-hidden table-container border-white/10 animate-in fade-in duration-700">
             <div className="p-4 sm:p-6 border-b border-white/10 font-medium no-print flex justify-between items-center">
               <span className="text-sm sm:text-base">Displaying {filteredGuests.length} Guests in {settings.mainTitle}</span>
@@ -783,7 +1072,8 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td className="p-4 flex justify-center items-center gap-3 no-print">
-                           {(guest.rsvpStatus === 'Need Verification' || guest.screenshot) && !guest.isSubordinate && (
+                           {/* 🚀 PHASE 1: LOCK VERIFY/EDIT/DELETE IF EVENT COMPLETED */}
+                           {(guest.rsvpStatus === 'Need Verification' || guest.screenshot) && !guest.isSubordinate && isCurrentEventActive && (
                              <button 
                                onClick={() => openVerifyModal(guest)} 
                                className="text-blue-400 hover:text-white" 
@@ -811,21 +1101,25 @@ export default function AdminDashboard() {
                              </button>
                            )}
 
-                           <button 
-                             onClick={() => openEditModal(guest)} 
-                             className="text-neutral-400 hover:text-white" 
-                             title="Edit"
-                           >
-                             <Edit className="w-5 h-5"/>
-                           </button>
+                           {isCurrentEventActive && (
+                             <button 
+                               onClick={() => openEditModal(guest)} 
+                               className="text-neutral-400 hover:text-white" 
+                               title="Edit"
+                             >
+                               <Edit className="w-5 h-5"/>
+                             </button>
+                           )}
                            
-                           <button 
-                             onClick={() => handleDelete(guest.id || guest._id, guest.firstName)} 
-                             className="text-neutral-500 hover:text-red-500" 
-                             title="Delete"
-                           >
-                             <Trash2 className="w-5 h-5"/>
-                           </button>
+                           {isCurrentEventActive && (
+                             <button 
+                               onClick={() => handleDelete(guest.id || guest._id, guest.firstName)} 
+                               className="text-neutral-500 hover:text-red-500" 
+                               title="Delete"
+                             >
+                               <Trash2 className="w-5 h-5"/>
+                             </button>
+                           )}
                         </td>
                       </tr>
                     ))
@@ -868,7 +1162,6 @@ export default function AdminDashboard() {
                     onChange={(e) => setEventFormData({...eventFormData, mainTitle: e.target.value})} 
                   />
                   
-                  {/* 🚀 RESPONSIVE FIX: sm:grid-cols-2 */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] text-neutral-500 uppercase ml-1">Event Date</label>
@@ -1015,7 +1308,6 @@ export default function AdminDashboard() {
                 </h2>
                 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* 🚀 RESPONSIVE FIX: sm:grid-cols-2 */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <input 
                       required 
@@ -1039,7 +1331,6 @@ export default function AdminDashboard() {
                     value={formData.mobileNumber} 
                     onChange={(e) => setFormData({...formData, mobileNumber: e.target.value})} 
                   />
-                  {/* 🚀 RESPONSIVE FIX: sm:grid-cols-2 */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs text-neutral-400 ml-1">Amount (₹)</label>
@@ -1113,7 +1404,6 @@ export default function AdminDashboard() {
                     <p className="text-neutral-500 font-light italic">No screenshot provided.</p>
                   )}
                 </div>
-                {/* 🚀 RESPONSIVE FIX: flex-col on mobile, sm:flex-row on desktop */}
                 <div className="flex flex-col sm:flex-row gap-3 w-full">
                   <button 
                     onClick={() => handleVerifyAction('Failed')} 
