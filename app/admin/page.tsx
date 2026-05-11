@@ -47,7 +47,11 @@ export default function AdminDashboard() {
   const [crmData, setCrmData] = useState<any[]>([]);
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmSearchQuery, setCrmSearchQuery] = useState("");
-  const [expandedCrmGuest, setExpandedCrmGuest] = useState<string | null>(null);
+  const [expandedCrmGuest, setExpandedCrmGuest] = useState<string | null>(null); // Kundali Track State
+
+  // 🚀 STRICT PLATFORM FIX: States for CRM Search inside Add Guest Modal
+  const [isSearchCrmMode, setIsSearchCrmMode] = useState(false);
+  const [crmAddSearchQuery, setCrmAddSearchQuery] = useState("");
 
   const [settings, setSettings] = useState({
     upiId: "", 
@@ -305,7 +309,8 @@ export default function AdminDashboard() {
         const res = await fetch('/api/admin/crm/delete', { 
           method: 'DELETE', 
           headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ mobileNumber }) 
+          // 🚀 FIXED: Sent as explicit string to avoid Firebase Document reference errors
+          body: JSON.stringify({ mobileNumber: String(mobileNumber) }) 
         });
         
         if (res.status === 401) router.push('/admin/login');
@@ -313,7 +318,7 @@ export default function AdminDashboard() {
         if (res.ok) {
           toast.success(`${name} has been completely deleted.`, { id: toastId });
           fetchCrmData(); 
-          fetchGuestsAndTables(activeEventId); // Taki background view bhi refresh ho jaye
+          fetchGuestsAndTables(activeEventId); 
         } else {
           toast.error("Failed to delete guest", { id: toastId });
         }
@@ -323,8 +328,10 @@ export default function AdminDashboard() {
     }
   };
 
-  // 🚀 PHASE 2: BLACKLIST TOGGLE LOGIC
-  const toggleBlacklist = async (mobileNumber: string, isBlacklisted: boolean) => {
+  // 🚀 PHASE 2: BLACKLIST TOGGLE LOGIC FIX
+  const toggleBlacklist = async (rawMobileNumber: string | number, isBlacklisted: boolean) => {
+    // 🚀 FIXED: Firebase hates numbers as Doc IDs. Enforcing String conversion here!
+    const mobileNumber = String(rawMobileNumber);
     const action = isBlacklisted ? "remove" : "add";
     const confirmMsg = isBlacklisted 
       ? `Are you sure you want to UNBAN ${mobileNumber}?` 
@@ -353,6 +360,7 @@ export default function AdminDashboard() {
 
   const openEditModal = (guest: any) => { 
     setIsEditing(true); 
+    setIsSearchCrmMode(false); // Reset
     setFormData({ ...guest }); 
     setIsModalOpen(true); 
   };
@@ -380,6 +388,16 @@ export default function AdminDashboard() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); 
+    
+    // 🚀 STRICT PLATFORM FIX: Duplicate Entry Check
+    if (!isEditing) {
+      const isDuplicate = guests.some(g => String(g.mobileNumber) === String(formData.mobileNumber));
+      if (isDuplicate) {
+        toast.error("This mobile number is already registered for this specific event!");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     const url = isEditing ? '/api/admin/guests/edit' : '/api/admin/guests/add';
     const res = await fetch(url, { 
@@ -393,6 +411,9 @@ export default function AdminDashboard() {
       setIsModalOpen(false); 
       setIsSubmitting(false); 
       fetchGuestsAndTables(activeEventId);
+    } else {
+      setIsSubmitting(false);
+      toast.error("Something went wrong");
     }
   };
 
@@ -528,7 +549,6 @@ export default function AdminDashboard() {
     return sortedList;
   }, [guests, view, searchQuery]);
 
-  // 🚀 PHASE 2: Filter CRM Data
   const filteredCrmData = useMemo(() => {
     if (!crmSearchQuery) return crmData;
     const query = crmSearchQuery.toLowerCase().trim();
@@ -537,6 +557,16 @@ export default function AdminDashboard() {
       String(g.mobileNumber || "").toLowerCase().includes(query)
     );
   }, [crmData, crmSearchQuery]);
+
+  // 🚀 CRM Search Modal Results
+  const modalCrmResults = useMemo(() => {
+    if (!crmAddSearchQuery) return [];
+    const query = crmAddSearchQuery.toLowerCase().trim();
+    return crmData.filter(c => 
+      `${c.firstName || ""} ${c.lastName || ""}`.toLowerCase().includes(query) || 
+      String(c.mobileNumber || "").toLowerCase().includes(query)
+    ).slice(0, 5); // Show only top 5 results for clean UI
+  }, [crmData, crmAddSearchQuery]);
 
   const revenueReceived = guests.filter(g => g.rsvpStatus === "Confirmed" || g.rsvpStatus === "Checked-In").reduce((sum, g) => {
     if (g.isSubordinate) return sum; 
@@ -602,7 +632,6 @@ export default function AdminDashboard() {
                 </button>
               )}
               <h1 className="text-2xl sm:text-3xl font-light tracking-wide">
-                {/* 🚀 Dynamic Header Title */}
                 {view === "Overview" ? "Command Center" : view === "Settings" ? "Platform Settings" : view === "CRM" ? "Master Guest Database" : `${view} List`}
               </h1>
             </div>
@@ -670,7 +699,6 @@ export default function AdminDashboard() {
               </button>
             )}
 
-            {/* 🚀 PHASE 2: CRM NAVIGATION BUTTON */}
             {view !== "CRM" && (
               <button 
                 onClick={() => setView("CRM")} 
@@ -720,6 +748,8 @@ export default function AdminDashboard() {
               <button 
                 onClick={() => {
                   setIsEditing(false); 
+                  setIsSearchCrmMode(false); // Reset CRM Search Mode
+                  setCrmAddSearchQuery("");
                   setFormData({ _id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending", eventId: activeEventId }); 
                   setIsModalOpen(true);
                 }} 
@@ -731,7 +761,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 🚀 PHASE 1: COMPLETED EVENT RED BANNER */}
         {view !== "CRM" && !isCurrentEventActive && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-4 no-print shadow-[0_0_20px_rgba(239,68,68,0.1)]">
              <div className="bg-red-500/20 p-2 rounded-full flex-shrink-0 mt-0.5"><Lock className="w-5 h-5 text-red-400" /></div>
@@ -896,7 +925,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 🚀 PHASE 2: MASTER CRM TABLE WITH KUNDALI */}
         {view === "CRM" && (
           <GlassCard className="p-0 overflow-hidden table-container border-white/10 animate-in fade-in duration-700">
             <div className="p-4 sm:p-6 border-b border-white/10 font-medium no-print flex justify-between items-center bg-indigo-500/5">
@@ -947,7 +975,6 @@ export default function AdminDashboard() {
                             )}
                           </td>
                           <td className="p-4 flex justify-center items-center gap-2">
-                            {/* KUNDALI BUTTON */}
                             <button 
                               onClick={() => setExpandedCrmGuest(expandedCrmGuest === guest.mobileNumber ? null : guest.mobileNumber)}
                               className="flex items-center gap-1 bg-white/5 border border-white/10 text-neutral-300 hover:bg-white/10 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
@@ -955,7 +982,6 @@ export default function AdminDashboard() {
                               <History className="w-3 h-3"/> History {expandedCrmGuest === guest.mobileNumber ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>}
                             </button>
                             
-                            {/* BAN BUTTON */}
                             <button 
                               onClick={() => toggleBlacklist(guest.mobileNumber, guest.isBlacklisted)}
                               className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
@@ -967,7 +993,6 @@ export default function AdminDashboard() {
                               {guest.isBlacklisted ? "Unban" : <><UserX className="w-3 h-3"/> Ban</>}
                             </button>
 
-                            {/* 🚀 NEW: MASTER CRM DELETE BUTTON */}
                             <button 
                               onClick={() => handleCrmDelete(guest.mobileNumber, guest.firstName)}
                               className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20"
@@ -978,7 +1003,6 @@ export default function AdminDashboard() {
                           </td>
                         </tr>
                         
-                        {/* 🚀 GUEST KUNDALI (EXPANDED ROW - LIST VIEW FORMAT) */}
                         <AnimatePresence>
                           {expandedCrmGuest === guest.mobileNumber && (
                             <tr className="bg-black/40 border-b border-white/5">
@@ -1040,7 +1064,6 @@ export default function AdminDashboard() {
           </GlassCard>
         )}
         
-        {/* --- EVENT GUEST TABLE --- */}
         {view !== "Settings" && view !== "CRM" && (
           <GlassCard className="p-0 overflow-hidden table-container border-white/10 animate-in fade-in duration-700">
             <div className="p-4 sm:p-6 border-b border-white/10 font-medium no-print flex justify-between items-center">
@@ -1109,7 +1132,6 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td className="p-4 flex justify-center items-center gap-3 no-print">
-                           {/* 🚀 PHASE 1: LOCK VERIFY/EDIT/DELETE IF EVENT COMPLETED */}
                            {(guest.rsvpStatus === 'Need Verification' || guest.screenshot) && !guest.isSubordinate && isCurrentEventActive && (
                              <button 
                                onClick={() => openVerifyModal(guest)} 
@@ -1345,61 +1367,114 @@ export default function AdminDashboard() {
                 </h2>
                 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <input 
-                      required 
-                      placeholder="First Name" 
-                      className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 text-white" 
-                      value={formData.firstName} 
-                      onChange={(e) => setFormData({...formData, firstName: e.target.value})} 
-                    />
-                    <input 
-                      required 
-                      placeholder="Last Name" 
-                      className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 text-white" 
-                      value={formData.lastName} 
-                      onChange={(e) => setFormData({...formData, lastName: e.target.value})} 
-                    />
-                  </div>
-                  <input 
-                    required 
-                    placeholder="Mobile Number" 
-                    className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 text-white" 
-                    value={formData.mobileNumber} 
-                    onChange={(e) => setFormData({...formData, mobileNumber: e.target.value})} 
-                  />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs text-neutral-400 ml-1">Amount (₹)</label>
+                  {/* 🚀 CRM SEARCH MODAL FEATURE */}
+                  {isSearchCrmMode ? (
+                    <div className="space-y-4">
+                      <div className="relative">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                        <input 
+                          autoFocus
+                          placeholder="Search CRM by Name or Mobile..." 
+                          className="w-full bg-black/50 border border-indigo-500/30 rounded-lg pl-10 pr-4 py-3 text-white outline-none focus:border-indigo-500 transition-all"
+                          value={crmAddSearchQuery}
+                          onChange={(e) => setCrmAddSearchQuery(e.target.value)}
+                        />
+                      </div>
+                      <div className="max-h-40 overflow-y-auto space-y-2">
+                        {modalCrmResults.length === 0 && crmAddSearchQuery && <p className="text-xs text-neutral-500 text-center py-2">No guest found in CRM.</p>}
+                        {modalCrmResults.map(c => (
+                          <div 
+                            key={c.mobileNumber} 
+                            onClick={() => {
+                              setFormData({...formData, firstName: c.firstName, lastName: c.lastName, mobileNumber: c.mobileNumber});
+                              setIsSearchCrmMode(false);
+                              setCrmAddSearchQuery("");
+                            }} 
+                            className="p-3 bg-white/5 hover:bg-indigo-500/20 border border-white/10 hover:border-indigo-500/30 rounded-lg cursor-pointer flex justify-between items-center transition-all"
+                          >
+                            <div>
+                              <p className="text-sm font-bold text-white capitalize">{c.firstName} {c.lastName}</p>
+                              <p className="text-xs text-neutral-400 font-mono">{c.mobileNumber}</p>
+                            </div>
+                            <PlusCircle className="w-4 h-4 text-indigo-400" />
+                          </div>
+                        ))}
+                      </div>
+                      <button type="button" onClick={() => setIsSearchCrmMode(false)} className="w-full py-2 text-xs text-neutral-400 hover:text-white mt-2">Cancel Search</button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <input 
+                          required 
+                          placeholder="First Name" 
+                          className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 text-white" 
+                          value={formData.firstName} 
+                          onChange={(e) => setFormData({...formData, firstName: e.target.value})} 
+                        />
+                        <input 
+                          required 
+                          placeholder="Last Name" 
+                          className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 text-white" 
+                          value={formData.lastName} 
+                          onChange={(e) => setFormData({...formData, lastName: e.target.value})} 
+                        />
+                      </div>
                       <input 
-                        type="number" 
                         required 
-                        className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 mt-1 text-white" 
-                        value={formData.amount} 
-                        onChange={(e) => setFormData({...formData, amount: Number(e.target.value)})} 
+                        placeholder="Mobile Number" 
+                        className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 text-white" 
+                        value={formData.mobileNumber} 
+                        onChange={(e) => setFormData({...formData, mobileNumber: e.target.value})} 
                       />
-                    </div>
-                    <div>
-                      <label className="text-xs text-neutral-400 ml-1">Status</label>
-                      <select 
-                        className="bg-[#1a1a1a] border border-white/10 rounded-lg p-3 w-full outline-none mt-1 text-white" 
-                        value={formData.rsvpStatus} 
-                        onChange={(e) => setFormData({...formData, rsvpStatus: e.target.value})}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs text-neutral-400 ml-1">Amount (₹)</label>
+                          <input 
+                            type="number" 
+                            required 
+                            className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 mt-1 text-white" 
+                            value={formData.amount} 
+                            onChange={(e) => setFormData({...formData, amount: Number(e.target.value)})} 
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-neutral-400 ml-1">Status</label>
+                          <select 
+                            className="bg-[#1a1a1a] border border-white/10 rounded-lg p-3 w-full outline-none mt-1 text-white" 
+                            value={formData.rsvpStatus} 
+                            onChange={(e) => setFormData({...formData, rsvpStatus: e.target.value})}
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Need Verification">Need Verification</option>
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Checked-In">Checked-In</option>
+                            <option value="Failed">Failed</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* 🚀 CRM LINK IN FORM */}
+                      {!isEditing && (
+                        <div className="pt-2 border-t border-white/10 mt-4">
+                          <button 
+                            type="button" 
+                            onClick={() => { setIsSearchCrmMode(true); fetchCrmData(); }} 
+                            className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium tracking-wide"
+                          >
+                            <Database className="w-3 h-3" /> Want to add an already existing guest? Search CRM
+                          </button>
+                        </div>
+                      )}
+
+                      <button 
+                        disabled={isSubmitting} 
+                        className="w-full bg-white text-neutral-950 py-3 rounded-lg font-medium hover:bg-neutral-200 mt-6 transition-colors shadow-lg"
                       >
-                        <option value="Pending">Pending</option>
-                        <option value="Need Verification">Need Verification</option>
-                        <option value="Confirmed">Confirmed</option>
-                        <option value="Checked-In">Checked-In</option>
-                        <option value="Failed">Failed</option>
-                      </select>
-                    </div>
-                  </div>
-                  <button 
-                    disabled={isSubmitting} 
-                    className="w-full bg-white text-neutral-950 py-3 rounded-lg font-medium hover:bg-neutral-200 mt-6 transition-colors shadow-lg"
-                  >
-                    {isSubmitting ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : "Save Changes"}
-                  </button>
+                        {isSubmitting ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : "Save Changes"}
+                      </button>
+                    </>
+                  )}
                 </form>
               </GlassCard>
             </motion.div>
