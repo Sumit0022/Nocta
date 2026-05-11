@@ -127,13 +127,15 @@ export default function AdminDashboard() {
     }
   };
 
+  // Initial Load
   useEffect(() => { 
     fetchEvents(); 
   }, []);
 
+  // Event Switch Logic
   useEffect(() => {
     if (activeEventId) {
-      fetchGuestsAndTables(activeEventId);
+      fetchGuestsAndTables(activeEventId); 
       const currentEvent = allEvents.find(e => e.eventId === activeEventId);
       if (currentEvent) {
         setSettings(currentEvent);
@@ -408,9 +410,8 @@ export default function AdminDashboard() {
     return sortedList;
   }, [guests, view, searchQuery]);
 
-  // 🚀 FIXED: Revenue calculation smart logic
   const revenueReceived = guests.filter(g => g.rsvpStatus === "Confirmed" || g.rsvpStatus === "Checked-In").reduce((sum, g) => {
-    if (g.isSubordinate) return sum; // Sub-ordinates pay nothing extra
+    if (g.isSubordinate) return sum; 
     const guestTable = tables.find(t => t.id === g.tableId);
     const amt = (g.isCaptain && guestTable) ? Number(guestTable.minSpend) : Number(g.amount || 0);
     return sum + amt;
@@ -444,7 +445,8 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <main className="min-h-screen w-full p-6 md:p-10 relative text-white">
+    // 🚀 RESPONSIVE FIX: Adjusted padding for mobile screens (p-4 md:p-10)
+    <main className="min-h-screen w-full p-4 sm:p-6 md:p-10 relative text-white overflow-x-hidden">
       <style dangerouslySetInnerHTML={{__html: `
         @media print { 
           body { background: white !important; color: black !important; padding: 0 !important; } 
@@ -459,9 +461,10 @@ export default function AdminDashboard() {
 
       <div className="max-w-6xl mx-auto space-y-8">
         
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
+        {/* --- HEADER --- */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 no-print">
           
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3 w-full md:w-auto">
             <div className="flex items-center gap-4">
               {view !== "Overview" && (
                 <button 
@@ -471,18 +474,18 @@ export default function AdminDashboard() {
                   <ArrowLeft className="w-6 h-6" />
                 </button>
               )}
-              <h1 className="text-3xl font-light tracking-wide">
+              <h1 className="text-2xl sm:text-3xl font-light tracking-wide">
                 {view === "Overview" ? "Command Center" : view === "Settings" ? "Platform Settings" : `${view} List`}
               </h1>
             </div>
 
-            <div className="flex items-center gap-3 mt-1">
-              <div className="bg-white/5 border border-white/10 rounded-full pl-4 pr-3 py-1.5 flex items-center gap-3">
-                <Sparkles className="w-4 h-4 text-amber-400" />
+            <div className="flex flex-wrap items-center gap-3 mt-1">
+              <div className="bg-white/5 border border-white/10 rounded-full pl-4 pr-3 py-1.5 flex items-center gap-3 w-full sm:w-auto">
+                <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
                 <select 
                   value={activeEventId} 
                   onChange={(e) => setActiveEventId(e.target.value)}
-                  className="bg-transparent text-sm outline-none cursor-pointer font-medium text-neutral-300 focus:text-white"
+                  className="bg-transparent text-sm outline-none cursor-pointer font-medium text-neutral-300 focus:text-white w-full"
                 >
                   {allEvents.length === 0 && <option value="">No Active Event</option>}
                   {allEvents.map((e) => (
@@ -502,14 +505,15 @@ export default function AdminDashboard() {
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          {/* 🚀 RESPONSIVE FIX: Added flex-wrap and w-full adjustments for mobile buttons */}
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
             {view !== "Settings" && (
-              <div className="relative">
+              <div className="relative w-full sm:w-auto flex-grow sm:flex-grow-0 mb-2 sm:mb-0">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
                 <input 
                   type="text" 
                   placeholder="Search..." 
-                  className="bg-white/5 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm outline-none focus:border-white/30 w-full md:w-64" 
+                  className="bg-white/5 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm outline-none focus:border-white/30 w-full sm:w-48 md:w-64" 
                   onChange={(e) => setSearchQuery(e.target.value)} 
                 />
               </div>
@@ -518,22 +522,22 @@ export default function AdminDashboard() {
             {view !== "Overview" && view !== "Settings" && (
               <button 
                 onClick={() => window.print()} 
-                className="flex items-center gap-2 bg-purple-500/20 text-purple-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-500/30 no-print"
+                className="flex items-center gap-2 bg-purple-500/20 text-purple-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-500/30 no-print flex-grow sm:flex-grow-0 justify-center"
               >
-                <Printer className="w-4 h-4" /> Export Data
+                <Printer className="w-4 h-4" /> Export
               </button>
             )}
 
             <button 
               onClick={() => setIsScannerOpen(true)} 
-              className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 shadow-[0_0_15px_rgba(251,191,36,0.15)] transition-all"
+              className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 shadow-[0_0_15px_rgba(251,191,36,0.15)] transition-all flex-grow sm:flex-grow-0 justify-center"
             >
               <ScanLine className="w-4 h-4" /> Scan Pass
             </button>
 
             <button 
               onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)}
-              className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 transition-all shadow-[0_0_15px_rgba(251,191,36,0.2)]"
+              className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 transition-all shadow-[0_0_15px_rgba(251,191,36,0.2)] flex-grow sm:flex-grow-0 justify-center"
             >
               Manage Tables
             </button>
@@ -560,7 +564,7 @@ export default function AdminDashboard() {
                 setFormData({ _id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending", eventId: activeEventId }); 
                 setIsModalOpen(true);
               }} 
-              className="flex items-center gap-2 bg-white text-neutral-950 px-4 py-2 rounded-lg text-sm font-medium hover:bg-neutral-200"
+              className="flex items-center gap-2 bg-white text-neutral-950 px-4 py-2 rounded-lg text-sm font-medium hover:bg-neutral-200 flex-grow sm:flex-grow-0 justify-center"
             >
               <Plus className="w-4 h-4" /> Add Guest
             </button>
@@ -570,7 +574,7 @@ export default function AdminDashboard() {
         {view === "Settings" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 no-print animate-in fade-in duration-500">
             
-            <GlassCard className="p-8 border-white/10 h-fit">
+            <GlassCard className="p-6 sm:p-8 border-white/10 h-fit">
               <div className="flex items-center gap-3 mb-6 text-amber-400">
                 <Sparkles className="w-5 h-5" />
                 <h2 className="text-xl font-medium text-white">Event Content</h2>
@@ -592,7 +596,8 @@ export default function AdminDashboard() {
                     className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30" 
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                {/* 🚀 RESPONSIVE FIX: sm:grid-cols-2 added for mobile stacking */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs text-neutral-500 uppercase">Date</label>
                     <input 
@@ -630,7 +635,7 @@ export default function AdminDashboard() {
             </GlassCard>
 
             <div className="space-y-8">
-              <GlassCard className="p-8 border-white/10">
+              <GlassCard className="p-6 sm:p-8 border-white/10">
                 <div className="flex items-center gap-3 mb-6 text-blue-400">
                   <IndianRupee className="w-5 h-5" />
                   <h2 className="text-xl font-medium text-white">Payment Setup</h2>
@@ -646,15 +651,15 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <label className="text-xs text-neutral-500 uppercase">QR Code</label>
-                    <div className="flex gap-4 items-center mt-2">
-                      <div className="w-24 h-24 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
+                    <div className="flex flex-col sm:flex-row gap-4 items-center mt-2">
+                      <div className="w-24 h-24 flex-shrink-0 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
                         {settings.qrCode ? (
                           <img src={settings.qrCode} className="w-full h-full object-contain" />
                         ) : (
                           <X className="text-neutral-500" />
                         )}
                       </div>
-                      <label className="flex-1 border-2 border-dashed border-white/20 rounded-lg p-4 text-center cursor-pointer hover:bg-white/5 flex flex-col items-center justify-center">
+                      <label className="flex-1 w-full border-2 border-dashed border-white/20 rounded-lg p-4 text-center cursor-pointer hover:bg-white/5 flex flex-col items-center justify-center">
                         <UploadCloud className="w-6 h-6 mb-1 text-neutral-500" />
                         <span className="text-xs text-neutral-500 italic">Change QR</span>
                         <input type="file" className="hidden" onChange={handleQrUpload} />
@@ -677,7 +682,7 @@ export default function AdminDashboard() {
         )}
 
         {view === "Overview" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 no-print animate-in fade-in duration-500">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 no-print animate-in fade-in duration-500">
             {stats.map((stat, i) => (
               <div key={i} onClick={() => setView(stat.target)} className="cursor-pointer h-full">
                 <GlassCard className="p-6 flex items-center justify-between hover:bg-white/5 transition-all group h-full">
@@ -687,7 +692,7 @@ export default function AdminDashboard() {
                     </p>
                     <p className="text-3xl font-semibold">{stat.value}</p>
                   </div>
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${stat.bg} ${stat.color}`}>
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${stat.bg} ${stat.color} flex-shrink-0`}>
                     <stat.icon className="w-6 h-6" />
                   </div>
                 </GlassCard>
@@ -703,7 +708,7 @@ export default function AdminDashboard() {
                   ₹{revenueReceived}
                 </p>
               </div>
-              <div className="w-12 h-12 rounded-full flex items-center justify-center bg-purple-500/20 text-purple-400 font-bold">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center bg-purple-500/20 text-purple-400 font-bold flex-shrink-0">
                 <IndianRupee className="w-6 h-6" />
               </div>
             </GlassCard>
@@ -712,13 +717,13 @@ export default function AdminDashboard() {
         
         {view !== "Settings" && (
           <GlassCard className="p-0 overflow-hidden table-container border-white/10 animate-in fade-in duration-700">
-            <div className="p-6 border-b border-white/10 font-medium no-print flex justify-between items-center">
-              <span>Displaying {filteredGuests.length} Guests in {settings.mainTitle}</span>
-              {loading && <Loader2 className="animate-spin w-4 h-4 text-neutral-500" />}
+            <div className="p-4 sm:p-6 border-b border-white/10 font-medium no-print flex justify-between items-center">
+              <span className="text-sm sm:text-base">Displaying {filteredGuests.length} Guests in {settings.mainTitle}</span>
+              {loading && <Loader2 className="animate-spin w-4 h-4 text-neutral-500 flex-shrink-0" />}
             </div>
             
             <div className="overflow-x-auto">
-              <table className="w-full text-left">
+              <table className="w-full text-left whitespace-nowrap min-w-[800px]">
                 <thead className="text-xs text-neutral-400 uppercase tracking-widest border-b border-white/5 bg-white/5">
                   <tr>
                     <th className="p-4">Name</th>
@@ -753,7 +758,6 @@ export default function AdminDashboard() {
                           {guest.mobileNumber}
                         </td>
                         
-                        {/* 🚀 FIXED: Dynamic Amount Table Rendering logic  */}
                         <td className="p-4 text-purple-400 font-mono no-print">
                           {guest.isSubordinate ? (
                             <span className="text-neutral-600">-</span>
@@ -843,7 +847,7 @@ export default function AdminDashboard() {
               exit={{ scale: 0.9, opacity: 0 }} 
               className="w-full max-w-lg"
             >
-              <GlassCard className="p-8 relative border-white/10">
+              <GlassCard className="p-6 sm:p-8 relative border-white/10">
                 <button 
                   onClick={() => setIsEventModalOpen(false)} 
                   className="absolute top-4 right-4 text-neutral-500 hover:text-white"
@@ -851,7 +855,7 @@ export default function AdminDashboard() {
                   <X className="w-5 h-5"/>
                 </button>
                 
-                <h2 className="text-2xl font-light mb-6 text-white flex items-center gap-3">
+                <h2 className="text-xl sm:text-2xl font-light mb-6 text-white flex items-center gap-3">
                   <PlusCircle className="text-amber-400" /> New Event Hub
                 </h2>
                 
@@ -864,7 +868,8 @@ export default function AdminDashboard() {
                     onChange={(e) => setEventFormData({...eventFormData, mainTitle: e.target.value})} 
                   />
                   
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* 🚀 RESPONSIVE FIX: sm:grid-cols-2 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] text-neutral-500 uppercase ml-1">Event Date</label>
                       <input 
@@ -934,7 +939,7 @@ export default function AdminDashboard() {
                   </p>
                 </div>
               ) : (
-                <div className="p-8 text-center bg-gradient-to-b from-neutral-900 to-black">
+                <div className="p-6 sm:p-8 text-center bg-gradient-to-b from-neutral-900 to-black">
                   {scannedResult.error ? (
                     <div>
                       <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
@@ -949,7 +954,7 @@ export default function AdminDashboard() {
                       <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20">
                         <CheckCircle2 className="w-10 h-10 text-green-500"/>
                       </div>
-                      <h2 className="text-3xl text-white font-bold capitalize">
+                      <h2 className="text-2xl sm:text-3xl text-white font-bold capitalize">
                         {scannedResult.firstName} {scannedResult.lastName}
                       </h2>
                       <div className="bg-white/5 py-2 px-4 rounded-lg inline-block mt-3 border border-white/10">
@@ -998,7 +1003,7 @@ export default function AdminDashboard() {
               exit={{ scale: 0.9, opacity: 0 }} 
               className="z-10 w-full max-w-md"
             >
-              <GlassCard className="p-8 relative border-white/10">
+              <GlassCard className="p-6 sm:p-8 relative border-white/10">
                 <button 
                   onClick={() => setIsModalOpen(false)} 
                   className="absolute top-4 right-4 text-neutral-500 hover:text-white transition-colors"
@@ -1010,7 +1015,8 @@ export default function AdminDashboard() {
                 </h2>
                 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* 🚀 RESPONSIVE FIX: sm:grid-cols-2 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <input 
                       required 
                       placeholder="First Name" 
@@ -1033,7 +1039,8 @@ export default function AdminDashboard() {
                     value={formData.mobileNumber} 
                     onChange={(e) => setFormData({...formData, mobileNumber: e.target.value})} 
                   />
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* 🚀 RESPONSIVE FIX: sm:grid-cols-2 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs text-neutral-400 ml-1">Amount (₹)</label>
                       <input 
@@ -1093,31 +1100,32 @@ export default function AdminDashboard() {
                 >
                   <X className="w-5 h-5"/>
                 </button>
-                <h2 className="text-lg font-medium mb-1 text-white tracking-wide">
+                <h2 className="text-lg font-medium mb-1 text-white tracking-wide text-center">
                   Verify Payment Proof
                 </h2>
-                <p className="text-sm text-neutral-400 mb-4">
+                <p className="text-sm text-neutral-400 mb-4 text-center">
                   {selectedGuest.firstName} {selectedGuest.lastName} • ₹{selectedGuest.amount}
                 </p>
-                <div className="w-full h-96 bg-black/50 border border-white/10 rounded-lg flex items-center justify-center overflow-hidden mb-6">
+                <div className="w-full h-64 sm:h-96 bg-black/50 border border-white/10 rounded-lg flex items-center justify-center overflow-hidden mb-6">
                   {selectedGuest.screenshot ? (
                     <img src={selectedGuest.screenshot} alt="Payment Proof" className="w-full h-full object-contain" />
                   ) : (
                     <p className="text-neutral-500 font-light italic">No screenshot provided.</p>
                   )}
                 </div>
-                <div className="flex gap-4 w-full">
+                {/* 🚀 RESPONSIVE FIX: flex-col on mobile, sm:flex-row on desktop */}
+                <div className="flex flex-col sm:flex-row gap-3 w-full">
                   <button 
                     onClick={() => handleVerifyAction('Failed')} 
                     disabled={isUpdatingStatus} 
-                    className="flex-1 bg-red-500/10 text-red-400 border border-red-500/20 py-3 rounded-lg hover:bg-red-500/20 transition-all font-medium"
+                    className="flex-1 w-full bg-red-500/10 text-red-400 border border-red-500/20 py-3 rounded-lg hover:bg-red-500/20 transition-all font-medium"
                   >
                     Reject
                   </button>
                   <button 
                     onClick={() => handleVerifyAction('Confirmed')} 
                     disabled={isUpdatingStatus} 
-                    className="flex-1 bg-green-500/10 text-green-400 border border-green-500/20 py-3 rounded-lg hover:bg-green-500/20 transition-all font-medium"
+                    className="flex-1 w-full bg-green-500/10 text-green-400 border border-green-500/20 py-3 rounded-lg hover:bg-green-500/20 transition-all font-medium"
                   >
                     Approve & Confirm
                   </button>
