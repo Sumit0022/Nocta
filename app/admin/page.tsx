@@ -13,7 +13,7 @@ import {
   Loader2, X, Edit, Eye, AlertCircle, Trash2, Search, 
   ArrowLeft, Printer, Settings, UploadCloud, Sparkles,
   LogOut, Ticket, ScanLine, PlusCircle, Crown, User, Lock,
-  Database, ShieldAlert, UserX, UserCheck, ChevronDown, ChevronUp, History, Heart, CalendarClock, ExternalLink
+  Database, ShieldAlert, UserX, UserCheck, ChevronDown, ChevronUp, History, Heart, CalendarClock, ExternalLink, CreditCard
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { QRCodeSVG } from "qrcode.react"; 
@@ -47,7 +47,8 @@ export default function AdminDashboard() {
   const [crmAddSearchQuery, setCrmAddSearchQuery] = useState("");
 
   const [settings, setSettings] = useState({
-    upiId: "", qrCode: "", mainTitle: "", mainHeadline: "", eventDate: "", eventTime: "", eventVenue: "", eventVibe: "", stagPrice: "", couplePrice: ""
+    upiId: "", qrCode: "", mainTitle: "", mainHeadline: "", eventDate: "", eventTime: "", eventVenue: "", eventVibe: "", stagPrice: "", couplePrice: "",
+    paymentMode: "manual", razorpayKey: "", razorpaySecret: "" 
   });
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -57,10 +58,11 @@ export default function AdminDashboard() {
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
   const [selectedGuest, setSelectedGuest] = useState<any>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  
   const [formData, setFormData] = useState({ 
     _id: "", id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending", eventId: "",
     entryType: "Stag", partnerFirstName: "", partnerLastName: "", partnerMobile: "",
-    isSubordinate: false, hostId: "" // Added for reference in edit
+    isSubordinate: false, hostId: ""
   });
 
   const [downloadingGuest, setDownloadingGuest] = useState<any>(null);
@@ -97,17 +99,35 @@ export default function AdminDashboard() {
       if (result.success && Array.isArray(result.data)) {
         setAllEvents(result.data);
         
+        // 🚀 SMART GLOBAL FALLBACK LOGIC
+        // System kisi bhi dusre event se key dhoondega, warna tera diya hua default use karega!
+        const globalKeys = {
+          key: result.data.find((e: any) => e.razorpayKey)?.razorpayKey || "rzp_test_SoRUGbeDDagVeE",
+          secret: result.data.find((e: any) => e.razorpaySecret)?.razorpaySecret || "CLYCy9UfuDp7kcGtiwoonhEy"
+        };
+
         const savedEventId = localStorage.getItem("adminActiveEventId");
         const isSavedEventValid = result.data.some((e: any) => e.eventId === savedEventId);
 
         if (savedEventId && isSavedEventValid) {
           setActiveEventId(savedEventId);
-          setSettings(result.data.find((e: any) => e.eventId === savedEventId));
+          const matchedEvent = result.data.find((e: any) => e.eventId === savedEventId);
+          setSettings({
+            ...matchedEvent, 
+            paymentMode: matchedEvent.paymentMode || "manual", 
+            razorpayKey: matchedEvent.razorpayKey || globalKeys.key, // 🔥 Auto-fill
+            razorpaySecret: matchedEvent.razorpaySecret || globalKeys.secret // 🔥 Auto-fill
+          });
         } else if (!activeEventId && result.data.length > 0) {
           const firstActive = result.data.find((e: any) => getEventStatus(e.eventDate, e.eventTime) === "Active");
           const targetEvent = firstActive || result.data[0];
           setActiveEventId(targetEvent.eventId);
-          setSettings(targetEvent);
+          setSettings({
+            ...targetEvent, 
+            paymentMode: targetEvent.paymentMode || "manual", 
+            razorpayKey: targetEvent.razorpayKey || globalKeys.key, // 🔥 Auto-fill
+            razorpaySecret: targetEvent.razorpaySecret || globalKeys.secret // 🔥 Auto-fill
+          });
           localStorage.setItem("adminActiveEventId", targetEvent.eventId);
         }
       }
@@ -145,7 +165,19 @@ export default function AdminDashboard() {
     if (activeEventId && view !== "CRM") {
       fetchGuestsAndTables(activeEventId); 
       const currentEvent = allEvents.find((e: any) => e.eventId === activeEventId);
-      if (currentEvent) setSettings(currentEvent);
+      
+      // 🚀 Apply fallback when directly switching events too
+      const globalKeys = {
+        key: allEvents.find((e: any) => e.razorpayKey)?.razorpayKey || "rzp_test_SoRUGbeDDagVeE",
+        secret: allEvents.find((e: any) => e.razorpaySecret)?.razorpaySecret || "CLYCy9UfuDp7kcGtiwoonhEy"
+      };
+
+      if (currentEvent) setSettings({
+        ...currentEvent, 
+        paymentMode: currentEvent.paymentMode || "manual", 
+        razorpayKey: currentEvent.razorpayKey || globalKeys.key, // 🔥 Auto-fill
+        razorpaySecret: currentEvent.razorpaySecret || globalKeys.secret // 🔥 Auto-fill
+      });
     }
   }, [activeEventId, allEvents, view]);
 
@@ -158,7 +190,7 @@ export default function AdminDashboard() {
       const res = await fetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(eventFormData),
+        body: JSON.stringify({...eventFormData, paymentMode: "manual"}),
       });
       const result = await res.json();
       if (result.success) {
@@ -245,7 +277,8 @@ export default function AdminDashboard() {
     setIsEditing(true); setIsSearchCrmMode(false); 
     setFormData({ 
       ...guest, 
-      id: guest._id || guest.id, 
+      id: guest._id || guest.id || "", 
+      _id: guest._id || guest.id || "", 
       entryType: guest.entryType || "Stag", 
       partnerFirstName: "", partnerLastName: "", partnerMobile: "",
       isSubordinate: guest.isSubordinate || false,
@@ -256,16 +289,13 @@ export default function AdminDashboard() {
   
   const openVerifyModal = (guest: any) => { setSelectedGuest(guest); setIsVerifyModalOpen(true); };
 
-  // 🚀 FIXED: SMART VERIFY ACTION (Updates Partners & Pax Automatically)
   const handleVerifyAction = async (newStatus: string) => {
     setIsUpdatingStatus(true);
     const toastId = toast.loading("Verifying and syncing linked guests...");
     
-    // Determine the main group ID (Either this guest's ID, or its host's ID)
     const guestId = selectedGuest.id || selectedGuest._id;
     const groupId = selectedGuest.isSubordinate ? selectedGuest.hostId : guestId;
 
-    // Find all guests belonging to this group
     const linkedMembers = guests.filter((g: any) => {
       const gId = g.id || g._id;
       return gId === groupId || g.hostId === groupId;
@@ -291,7 +321,6 @@ export default function AdminDashboard() {
     setIsUpdatingStatus(false);
   };
 
-  // 🚀 FIXED: EDIT MODAL SYNC (Updates Partners & Pax if status changed manually)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); 
     if (!isEditing) {
@@ -302,30 +331,34 @@ export default function AdminDashboard() {
     setIsSubmitting(true);
     const toastId = toast.loading("Saving changes...");
     const url = isEditing ? '/api/admin/guests/edit' : '/api/admin/guests/add';
+    
     const payload = { 
-      ...formData, eventId: activeEventId,
+      ...formData, 
+      id: formData.id || formData._id, 
+      _id: formData.id || formData._id, 
+      eventId: activeEventId,
       ...(formData.entryType === "Couple" && !isEditing && { partnerDetails: { firstName: formData.partnerFirstName, lastName: formData.partnerLastName, phone: formData.partnerMobile } })
     };
 
     try {
       const res = await fetch(url, { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      
+      const responseData = await res.json().catch(() => ({})); 
+
       if (res.ok) {
-        // If we edited a guest's status, let's automatically sync their partners/pax too!
         if (isEditing) {
            const formGuestId = formData.id || formData._id;
            const groupId = formData.isSubordinate ? formData.hostId : formGuestId;
            
            const linkedMembers = guests.filter((g: any) => {
               const gId = g.id || g._id;
-              return (gId === groupId || g.hostId === groupId) && gId !== formGuestId; // Exclude the one we just updated
+              return (gId === groupId || g.hostId === groupId) && gId !== formGuestId; 
            });
 
            if (linkedMembers.length > 0) {
               await Promise.all(linkedMembers.map(member => 
                  fetch('/api/admin/guests/edit', {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ...member, rsvpStatus: formData.rsvpStatus }) // Sync the status!
+                    body: JSON.stringify({ ...member, rsvpStatus: formData.rsvpStatus })
                  })
               ));
            }
@@ -335,7 +368,7 @@ export default function AdminDashboard() {
         setIsModalOpen(false); 
         fetchGuestsAndTables(activeEventId);
       } else {
-        toast.error("Something went wrong", { id: toastId });
+        toast.error(responseData.error || responseData.message || "Failed to save changes", { id: toastId });
       }
     } catch (err) {
       toast.error("Network Error", { id: toastId });
@@ -572,19 +605,62 @@ export default function AdminDashboard() {
                   <IndianRupee className="w-5 h-5" />
                   <h2 className="text-xl font-medium text-white">Payment Setup</h2>
                 </div>
-                <div className="space-y-4 text-white">
-                  <div><label className="text-xs text-neutral-500 uppercase">UPI ID</label><input disabled={!isCurrentEventActive} value={settings.upiId} onChange={(e) => setSettings({...settings, upiId: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 text-white disabled:opacity-50" /></div>
-                  <div>
-                    <label className="text-xs text-neutral-500 uppercase">QR Code</label>
-                    <div className="flex flex-col sm:flex-row gap-4 items-center mt-2">
-                      <div className="w-24 h-24 flex-shrink-0 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
-                        {settings.qrCode ? <img src={settings.qrCode} className="w-full h-full object-contain" /> : <X className="text-neutral-500" />}
-                      </div>
-                      {isCurrentEventActive && (
-                        <label className="flex-1 w-full border-2 border-dashed border-white/20 rounded-lg p-4 text-center cursor-pointer hover:bg-white/5 flex flex-col items-center justify-center"><UploadCloud className="w-6 h-6 mb-1 text-neutral-500" /><span className="text-xs text-neutral-500 italic">Change QR</span><input type="file" className="hidden" onChange={handleQrUpload} /></label>
-                      )}
-                    </div>
+                
+                <div className="space-y-6 text-white">
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                     <label className="text-xs text-neutral-500 uppercase mb-2 block font-bold tracking-wider">Active Payment Gateway</label>
+                     <div className="flex gap-2">
+                        <button 
+                          onClick={() => setSettings({...settings, paymentMode: "manual"})} 
+                          disabled={!isCurrentEventActive}
+                          className={`flex-1 py-3 rounded-lg text-xs uppercase font-bold tracking-widest transition-all border ${settings.paymentMode === "manual" ? "bg-amber-500 text-black border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]" : "bg-black/50 border-white/10 text-neutral-500 hover:text-white"}`}
+                        >
+                          Manual (QR / UPI)
+                        </button>
+                        <button 
+                          onClick={() => setSettings({...settings, paymentMode: "razorpay"})} 
+                          disabled={!isCurrentEventActive}
+                          className={`flex-1 py-3 rounded-lg text-xs uppercase font-bold tracking-widest transition-all border ${settings.paymentMode === "razorpay" ? "bg-blue-600 text-white border-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.2)] flex items-center justify-center gap-2" : "bg-black/50 border-white/10 text-neutral-500 hover:text-white flex items-center justify-center gap-2"}`}
+                        >
+                          <CreditCard className="w-4 h-4"/> Auto (Razorpay)
+                        </button>
+                     </div>
+                     <p className="text-[10px] text-neutral-500 mt-3 text-center">
+                       {settings.paymentMode === "manual" ? "Guests will upload screenshots for admin verification." : "Payments will be automatically captured and verified instantly."}
+                     </p>
                   </div>
+
+                  <AnimatePresence mode="wait">
+                    {settings.paymentMode === "manual" ? (
+                      <motion.div key="manual" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="space-y-4">
+                        <div><label className="text-xs text-neutral-500 uppercase">UPI ID</label><input disabled={!isCurrentEventActive} value={settings.upiId} onChange={(e) => setSettings({...settings, upiId: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 text-white disabled:opacity-50" /></div>
+                        <div>
+                          <label className="text-xs text-neutral-500 uppercase">QR Code</label>
+                          <div className="flex flex-col sm:flex-row gap-4 items-center mt-2">
+                            <div className="w-24 h-24 flex-shrink-0 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
+                              {settings.qrCode ? <img src={settings.qrCode} className="w-full h-full object-contain" /> : <X className="text-neutral-500" />}
+                            </div>
+                            {isCurrentEventActive && (
+                              <label className="flex-1 w-full border-2 border-dashed border-white/20 rounded-lg p-4 text-center cursor-pointer hover:bg-white/5 flex flex-col items-center justify-center"><UploadCloud className="w-6 h-6 mb-1 text-neutral-500" /><span className="text-xs text-neutral-500 italic">Change QR</span><input type="file" className="hidden" onChange={handleQrUpload} /></label>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <motion.div key="razorpay" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="space-y-4">
+                        <div>
+                           <label className="text-xs text-blue-400 uppercase font-bold tracking-widest flex items-center gap-1 mb-1"><Sparkles className="w-3 h-3"/> Razorpay Key ID</label>
+                           <input type="text" disabled={!isCurrentEventActive} value={settings.razorpayKey} onChange={(e) => setSettings({...settings, razorpayKey: e.target.value})} placeholder="rzp_test_..." className="w-full bg-blue-900/10 border border-blue-500/30 rounded-lg p-3 mt-1 outline-none focus:border-blue-500/50 text-white disabled:opacity-50 font-mono text-sm" />
+                        </div>
+                        <div>
+                           <label className="text-xs text-blue-400 uppercase font-bold tracking-widest flex items-center gap-1 mb-1"><Lock className="w-3 h-3"/> Razorpay Key Secret</label>
+                           <input type="password" disabled={!isCurrentEventActive} value={settings.razorpaySecret} onChange={(e) => setSettings({...settings, razorpaySecret: e.target.value})} placeholder="Secret Key..." className="w-full bg-blue-900/10 border border-blue-500/30 rounded-lg p-3 mt-1 outline-none focus:border-blue-500/50 text-white disabled:opacity-50 font-mono text-sm" />
+                           <p className="text-[10px] text-neutral-500 mt-2 italic">Dono keys Razorpay Dashboard se copy karke yahan paste karein. Yeh database mein securely save ho jayengi.</p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                 </div>
               </GlassCard>
               
@@ -898,6 +974,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* 🚀 FIXED: VERIFY PAYMENT MODAL (Thumbnail Design + Full Image + Razorpay Support) */}
         {isVerifyModalOpen && selectedGuest && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsVerifyModalOpen(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
@@ -915,55 +992,70 @@ export default function AdminDashboard() {
                      <span className="text-white font-mono font-bold">₹{selectedGuest.amount}</span>
                   </div>
                   
-                  {selectedGuest.paymentHistory && selectedGuest.paymentHistory.length > 0 ? (
-                     <div className="mt-4 border-t border-white/10 pt-4">
-                        <p className="text-[10px] uppercase tracking-widest text-zinc-500 flex items-center gap-1 mb-3"><CalendarClock className="w-3 h-3"/> Transaction History</p>
-                        
-                        <div className="space-y-3">
-                          {selectedGuest.paymentHistory.map((hist: any, i: number) => (
-                             <div key={i} className="flex gap-4 items-center bg-black/40 p-3 rounded-lg border border-white/5">
-                                <img src={hist.screenshot} className="w-16 h-16 object-cover rounded border border-white/20" />
-                                <div className="flex-1">
-                                   <p className="text-xs text-zinc-500">{new Date(hist.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</p>
-                                   <p className="text-sm text-green-400 font-mono font-bold mt-0.5">+ ₹{hist.amountPaid}</p>
-                                   <p className="text-[10px] uppercase text-amber-500 mt-1 tracking-widest">{hist.type} Pass</p>
-                                </div>
-                                
-                                <button 
-                                  onClick={() => openBase64InNewTab(hist.screenshot)} 
-                                  className="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded flex items-center gap-2 border border-white/10 transition-all"
-                                >
-                                   <ExternalLink className="w-3 h-3" /> Full Image
-                                </button>
+                  {/* 🚀 THE SMART PAYMENT HISTORY RENDERER (SMALL THUMBNAILS WITH OPEN FULL BUTTON) */}
+                  <div className="w-full overflow-y-auto pr-1 space-y-3 mt-4">
+                    {selectedGuest.paymentHistory && selectedGuest.paymentHistory.length > 0 ? (
+                      selectedGuest.paymentHistory.map((hist: any, i: number) => (
+                        <div key={i} className={`flex gap-3 sm:gap-4 items-center p-3 rounded-lg border ${hist.method === 'razorpay_auto' ? 'bg-blue-900/10 border-blue-500/20' : 'bg-black/40 border-white/5'}`}>
+                           
+                           {/* 🟢 Razorpay vs Manual Icon/Image */}
+                           {hist.method === 'razorpay_auto' ? (
+                             <div className="w-16 h-16 bg-blue-500/20 text-blue-400 rounded flex items-center justify-center border border-blue-500/30 flex-shrink-0">
+                               <CreditCard className="w-6 h-6" />
                              </div>
-                          ))}
+                           ) : (
+                             <img src={hist.screenshot} className="w-16 h-16 object-cover rounded border border-white/20 flex-shrink-0" />
+                           )}
+                           
+                           <div className="flex-1 min-w-0">
+                              <p className="text-xs text-zinc-500 truncate">{new Date(hist.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                              <p className="text-sm text-green-400 font-mono font-bold mt-0.5">+ ₹{hist.amountPaid}</p>
+                              <p className="text-[10px] uppercase text-amber-500 mt-1 tracking-widest truncate">
+                                {hist.type} Pass {hist.method === 'razorpay_auto' && `• ID: ${hist.paymentId?.slice(-6) || 'Auto'}`}
+                              </p>
+                           </div>
+                           
+                           {/* 🟢 Only show Full Image button for Manual (Screenshots) */}
+                           {hist.method !== 'razorpay_auto' && hist.screenshot && (
+                             <button 
+                               onClick={() => openBase64InNewTab(hist.screenshot)} 
+                               className="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded flex items-center gap-2 border border-white/10 transition-all whitespace-nowrap flex-shrink-0"
+                             >
+                                <ExternalLink className="w-3 h-3" /> <span className="hidden sm:inline">Full Image</span>
+                             </button>
+                           )}
                         </div>
-                     </div>
-                  ) : (
-                     <div className="mt-4 border-t border-white/10 pt-4">
-                        <p className="text-xs text-zinc-500 mb-2">Latest Verification Screenshot:</p>
-                        <div className="w-full h-48 sm:h-64 bg-black/50 border border-white/10 rounded-lg flex items-center justify-center overflow-hidden relative">
-                          {selectedGuest.screenshot ? (
-                            <>
-                              <img src={selectedGuest.screenshot} alt="Payment Proof" className="w-full h-full object-contain" />
-                              <button 
-                                onClick={() => openBase64InNewTab(selectedGuest.screenshot)} 
-                                className="absolute bottom-3 right-3 bg-black/80 hover:bg-black text-white text-xs px-3 py-1.5 rounded flex items-center gap-2 border border-white/20 transition-all opacity-80 hover:opacity-100"
-                              >
-                                 <ExternalLink className="w-3 h-3" /> Full Image
-                              </button>
-                            </>
-                          ) : (
-                            <p className="text-neutral-500 font-light italic">No screenshot provided.</p>
-                          )}
-                        </div>
-                     </div>
-                  )}
+                      ))
+                    ) : (
+                      <div className="w-full">
+                         {/* Fallback for Legacy Screenshots without History Array */}
+                         {selectedGuest.screenshot ? (
+                            <div className="flex gap-3 sm:gap-4 items-center bg-black/40 p-3 rounded-lg border border-white/5">
+                               <img src={selectedGuest.screenshot} className="w-16 h-16 object-cover rounded border border-white/20 flex-shrink-0" />
+                               <div className="flex-1 min-w-0">
+                                  <p className="text-xs text-zinc-500">Legacy Payment</p>
+                                  <p className="text-sm text-green-400 font-mono font-bold">₹{selectedGuest.amount}</p>
+                                  <p className="text-[10px] uppercase text-amber-500 mt-1 tracking-widest">{selectedGuest.entryType} Pass</p>
+                               </div>
+                               <button 
+                                 onClick={() => openBase64InNewTab(selectedGuest.screenshot)} 
+                                 className="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded flex items-center gap-2 border border-white/10 transition-all whitespace-nowrap flex-shrink-0"
+                               >
+                                  <ExternalLink className="w-3 h-3" /> <span className="hidden sm:inline">Full Image</span>
+                               </button>
+                            </div>
+                         ) : (
+                           <p className="text-neutral-500 font-light italic text-sm text-center py-4">No payment record or screenshot provided.</p>
+                         )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
+                {/* 🚀 EXPLICIT FAILED OR CONFIRMED OPTIONS */}
                 <div className="flex flex-col sm:flex-row gap-3 w-full mt-auto">
-                  <button onClick={() => handleVerifyAction('Failed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-red-500/10 text-red-400 border border-red-500/20 py-3 rounded-lg hover:bg-red-500/20 transition-all font-medium">Reject</button>
-                  <button onClick={() => handleVerifyAction('Confirmed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-green-500/10 text-green-400 border border-green-500/20 py-3 rounded-lg hover:bg-green-500/20 transition-all font-medium">Approve & Confirm</button>
+                  <button onClick={() => handleVerifyAction('Failed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-red-500/10 text-red-400 border border-red-500/20 py-3 rounded-lg hover:bg-red-500/20 transition-all font-bold tracking-wide">Mark as Failed</button>
+                  <button onClick={() => handleVerifyAction('Confirmed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-green-500/10 text-green-400 border border-green-500/20 py-3 rounded-lg hover:bg-green-500/20 transition-all font-bold tracking-wide">Approve & Confirm</button>
                 </div>
               </GlassCard>
             </motion.div>

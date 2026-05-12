@@ -6,7 +6,7 @@ import jsPDF from "jspdf";
 import { toPng } from "html-to-image"; 
 import { motion } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
-import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download, Crown } from "lucide-react"; // 🚀 Added Crown icon
+import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download, Crown, Info } from "lucide-react"; 
 import { toast } from "sonner";
 
 export default function DashboardPage() {
@@ -15,10 +15,15 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [eventDetails, setEventDetails] = useState<any>(null);
   
-  // 🚀 NEW: State to store VIP Table Name
   const [tableName, setTableName] = useState<string | null>(null);
+  
+  // 🚀 NEW: State to store Entry Type for partner message
+  const [entryType, setEntryType] = useState("Stag");
 
   useEffect(() => {
+    // 🚀 THE FIX: Dismiss any stuck loading toasts from the Payment Page!
+    toast.dismiss();
+
     const fetchAllData = async () => {
       const params = new URLSearchParams(window.location.search);
       const fName = params.get("firstName");
@@ -34,7 +39,9 @@ export default function DashboardPage() {
           const guestResult = await guestRes.json();
           if (guestResult.success) {
             setEntryCode(guestResult.data.entryCode || "N/A");
-            fetchedTableId = guestResult.data.tableId; // 🚀 Guest ki table ID catch kar li
+            fetchedTableId = guestResult.data.tableId; 
+            // 🚀 THE FIX: Catch the entry type
+            setEntryType(guestResult.data.entryType || "Stag");
           }
         }
 
@@ -50,7 +57,6 @@ export default function DashboardPage() {
           }
         }
 
-        // 🚀 NEW: Agar guest ke paas Table ID hai, toh Table ka naam fetch karo
         if (fetchedTableId && eId) {
           const tablesRes = await fetch(`/api/admin/tables?eventId=${eId}`, { cache: "no-store" });
           const tablesResult = await tablesRes.json();
@@ -151,7 +157,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* 🚀 NEW: Yahan dikhegi VIP Table agar usne book ki hogi */}
                 {tableName && (
                   <div className="flex items-center gap-4 text-amber-400 pt-3 border-t border-white/5">
                     <Crown className="w-5 h-5 text-amber-500" />
@@ -189,6 +194,16 @@ export default function DashboardPage() {
             </div>
           </GlassCard>
         </div>
+
+        {/* 🚀 THE FIX: Partner Message Displayed OUTSIDE the PDF target card */}
+        {entryType !== "Stag" && (
+          <div className="mt-6 bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl text-center shadow-[0_0_15px_rgba(59,130,246,0.1)] animate-in fade-in zoom-in">
+            <Info className="w-5 h-5 text-blue-400 mx-auto mb-2" />
+            <p className="text-xs text-blue-300 font-medium leading-relaxed">
+              <strong className="text-blue-400">Important:</strong> You booked a {entryType} Pass! Please ask your partner/group to visit the main registration page, click <span className="text-white">"Already booked? Download your entry pass here"</span>, and enter their own details to download their individual tickets.
+            </p>
+          </div>
+        )}
 
         <button 
           type="button" 

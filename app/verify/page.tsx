@@ -13,7 +13,6 @@ import { ArrowRight, Loader2, KeyRound, CheckCircle2, Ticket, ChevronDown, Users
 import { auth } from "@/lib/firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
-// 🚀 EVENT LIFECYCLE LOGIC
 const getEventStatus = (dateStr: string, timeStr: string) => {
   if (!dateStr || !timeStr) return "Active"; 
   const eventDateTime = new Date(`${dateStr}T${timeStr}`);
@@ -37,13 +36,11 @@ const formatEventDate = (dateStr: string) => {
 export default function VerifyPage() {
   const router = useRouter();
 
-  // --- EVENT STATES ---
   const [allEvents, setAllEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [eventsLoading, setEventsLoading] = useState(true);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // --- GUEST STATES ---
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [mobileNumber, setMobileNumber] = useState(""); 
@@ -53,16 +50,13 @@ export default function VerifyPage() {
   const [successData, setSuccessData] = useState<any>(null);
   const [isNewRegistration, setIsNewRegistration] = useState(false); 
 
-  // --- TICKETING STATES ---
   const [entryType, setEntryType] = useState<"Stag" | "Couple" | "Group">("Stag");
   const [partnerFirstName, setPartnerFirstName] = useState("");
   const [partnerLastName, setPartnerLastName] = useState("");
   const [partnerMobile, setPartnerMobile] = useState("");
 
-  // 🚀 PHASE 3: ALREADY BOOKED MODE STATE
   const [isAlreadyBookedMode, setIsAlreadyBookedMode] = useState(false);
 
-  // --- OTP STATES ---
   const [otpSent, setOtpSent] = useState(false);
   const [otpInput, setOtpInput] = useState("");
   const [otpError, setOtpError] = useState("");
@@ -99,7 +93,6 @@ export default function VerifyPage() {
     if (!selectedEventId) return setError("Please select an event first.");
     if (mobileNumber.length < 10) return setError("Please enter a valid 10-digit mobile number.");
     
-    // 🚀 BYPASS PARTNER VALIDATIONS IF THEY ARE JUST DOWNLOADING PASS
     if (!isAlreadyBookedMode) {
       if (entryType === "Couple" && (!partnerFirstName || !partnerLastName || !partnerMobile)) return setError("Please fill complete partner details for Couple entry.");
       if (entryType === "Couple" && partnerMobile === mobileNumber) return setError("Partner mobile number must be different from your mobile number.");
@@ -121,7 +114,6 @@ export default function VerifyPage() {
         setSuccessData(data); setIsNewRegistration(false);
         if (data.data?.firstName) setFirstName(data.data.firstName);
       } else if (isGuestNotFound) {
-        // 🚀 ALREADY BOOKED MODE PROTECTION
         if (isAlreadyBookedMode) {
           setError("No booking found with these details. Please switch to New Registration/Upgrade.");
           setLoading(false);
@@ -171,13 +163,13 @@ export default function VerifyPage() {
       const originalEntryType = successData?.data?.entryType || "Stag"; 
       let isUpgradeFlow = false;
       
-      // Upgrade detect nahi karenge agar banda explicitly Already Booked mode mein aaya hai
       if (!isNewRegistration && currentStatus === "Confirmed" && !isAlreadyBookedMode) {
         if (originalEntryType === "Stag" && entryType === "Couple") isUpgradeFlow = true;
         if (entryType === "Group" && !successData?.data?.tableId) isUpgradeFlow = true;
       }
 
-      if (isNewRegistration || currentStatus === "Pending" || isUpgradeFlow) {
+      // 🚀 THE MASTER FIX: ADDED "Failed" TO THE ROUTING CONDITION
+      if (isNewRegistration || currentStatus === "Pending" || currentStatus === "Failed" || isUpgradeFlow) {
         const queryParams = new URLSearchParams({
           firstName, lastName, mobile: mobileNumber, eventId: selectedEventId,
           guestId: successData?.data?._id || successData?.guest?._id || "",
@@ -189,7 +181,6 @@ export default function VerifyPage() {
         return;
       }
 
-      // If Confirmed and not upgrading, route straight to Dashboard
       if (currentStatus === "Confirmed") router.push(`/dashboard?firstName=${firstName}&lastName=${lastName}&eventId=${selectedEventId}`); 
       else if (currentStatus === "Need Verification") router.push('/status');
 
@@ -244,8 +235,6 @@ export default function VerifyPage() {
             <AnimatePresence>
               {selectedEventId && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-4 overflow-hidden pt-2">
-                  
-                  {/* 🚀 ONLY SHOW ENTRY TYPE SELECTION IF NOT IN ALREADY BOOKED MODE */}
                   <AnimatePresence>
                     {!isAlreadyBookedMode && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="flex gap-2 mb-4 bg-black/60 p-1 rounded-xl border border-white/10 shadow-inner">
@@ -256,12 +245,11 @@ export default function VerifyPage() {
                     )}
                   </AnimatePresence>
 
-                  {/* 🚀 HELPFUL NOTE FOR PARTNERS */}
                   <AnimatePresence>
                     {isAlreadyBookedMode && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl mb-4 text-center">
                         <p className="text-xs text-amber-500 font-medium flex items-center justify-center gap-2">
-                          <Info className="w-4 h-4"/> In case Couple/Group, enter their Partner specific Name & Mobile Number.
+                          <Info className="w-4 h-4"/> To download a partner's pass, enter their specific Name & Mobile Number.
                         </p>
                       </motion.div>
                     )}
@@ -277,7 +265,6 @@ export default function VerifyPage() {
                     <input type="tel" maxLength={10} required value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value.replace(/[^0-9]/g, ''))} className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm text-white outline-none focus:border-amber-500/50 transition-all" placeholder="Your Mobile Number" />
                   </div>
 
-                  {/* 🚀 HIDE PARTNER DETAILS IF JUST DOWNLOADING PASS */}
                   <AnimatePresence>
                     {entryType === "Couple" && !isAlreadyBookedMode && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-4 pt-4 mt-2 overflow-hidden border-t border-dashed border-white/10">
@@ -297,7 +284,6 @@ export default function VerifyPage() {
                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isAlreadyBookedMode ? "Fetch Entry Pass" : "Verify Identity & Proceed")} <ArrowRight className="w-4 h-4 ml-2"/>
                   </button>
 
-                  {/* 🚀 THE UI TOGGLE LINK */}
                   <div className="pt-4 border-t border-white/10 mt-4 text-center">
                     <button 
                       type="button" 

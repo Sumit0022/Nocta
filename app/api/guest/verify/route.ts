@@ -1,54 +1,60 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, where } from "firebase/firestore/lite";
+import { collection, query, where, getDocs } from "firebase/firestore/lite";
 
 export async function POST(req: Request) {
   try {
-    // 🚀 THE UPGRADE: Frontend se ab eventId bhi aayega
-    const { firstName, lastName, eventId } = await req.json();
+    const { firstName, lastName, mobileNumber, eventId } = await req.json();
 
-    // 1. User ki input ko clean karo (spaces hatao aur chote letters mein badlo)
-    const searchFirst = firstName.trim().toLowerCase();
-    const searchLast = lastName.trim().toLowerCase();
-
-    // 🚀 THE MAGIC: Agar eventId hai, toh sirf usi party ke guests uthao (Database Optimization)
-    let guestsQuery = collection(db, "guests");
-    if (eventId) {
-      guestsQuery = query(collection(db, "guests"), where("eventId", "==", eventId)) as any;
+    if (!firstName || !lastName || !mobileNumber || !eventId) {
+      return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
     }
 
-    const querySnapshot = await getDocs(guestsQuery);
+    const guestsCol = collection(db, "guests");
 
-    let matchedDoc = null;
+    // 🚀 NEW SECURITY FEATURE: GLOBAL IDENTITY LOCK
+    // Check if this mobile number exists ANYWHERE in the database (across any event)
+    const globalNumberQuery = query(guestsCol, where("mobileNumber", "==", String(mobileNumber)));
+    const globalNumberSnapshot = await getDocs(globalNumberQuery);
 
-    // 2. Database ke data ko bhi clean karke match karo (No more case-sensitive errors!)
-    for (const doc of querySnapshot.docs) {
-      const data = doc.data();
-      const dbFirst = (data.firstName || "").trim().toLowerCase();
-      const dbLast = (data.lastName || "").trim().toLowerCase();
+    if (!globalNumberSnapshot.empty) {
+      // Find the first valid registered identity for this number
+      const existingRecord = globalNumberSnapshot.docs[0].data();
+      
+      const existingFullName = `${existingRecord.firstName} ${existingRecord.lastName}`.toLowerCase().trim();
+      const incomingFullName = `${firstName} ${lastName}`.toLowerCase().trim();
 
-      // Naam aur Last Name dono match hone chahiye usi event list mein
-      if (dbFirst === searchFirst && dbLast === searchLast) {
-        matchedDoc = doc;
-        break;
+      // If the incoming name doesn't match the universally registered name for this number
+      if (existingFullName !== incomingFullName) {
+        return NextResponse.json({ 
+          success: false, 
+          error: `Security Alert: This mobile number belongs to ${existingRecord.firstName} ${existingRecord.lastName}. Please enter your registered name or use a different number.` 
+        }, { status: 403 });
       }
     }
 
-    if (!matchedDoc) {
-      // Error ke time bhi thoda delay taaki jhatka na lage
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      return NextResponse.json({ success: false, message: "Guest not found in this Event's VIP list" }, { status: 404 });
+    // 🚀 ORIGINAL LOGIC: Event-Specific Check
+    // Ab check karo ki kya ye banda IS SPECIFIC EVENT ke liye registered hai ya nahi
+    const eventSpecificQuery = query(
+      guestsCol, 
+      where("mobileNumber", "==", String(mobileNumber)), 
+      where("eventId", "==", eventId)
+    );
+    const eventSpecificSnapshot = await getDocs(eventSpecificQuery);
+
+    if (eventSpecificSnapshot.empty) {
+      // Identity is valid (or brand new), but they are NOT registered for this specific event yet
+      return NextResponse.json({ success: false, message: "Guest not found in this event" }, { status: 404 });
     }
 
-    // 3. THE ANIMATION FIX 🎬: 0.8 second ka artificial delay taaki tera smooth animation play ho sake
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    // Banda is event mein registered hai! Data wapas bhej do OTP ke liye.
+    const guestData = eventSpecificSnapshot.docs[0].data();
+    guestData._id = eventSpecificSnapshot.docs[0].id; // Assign document ID
 
-    const guestData = { id: matchedDoc.id, _id: matchedDoc.id, ...matchedDoc.data() };
-    
-    return NextResponse.json({ success: true, data: guestData, guest: guestData });
+    return NextResponse.json({ success: true, data: guestData });
 
-  } catch (error) {
-    console.error("Firebase Verify Error:", error);
-    return NextResponse.json({ success: false, error: "Verification failed" }, { status: 500 });
+  } catch (error: any) {
+    console.error("Verification API Error:", error);
+    return NextResponse.json({ success: false, error: "Server Error" }, { status: 500 });
   }
 }

@@ -3,7 +3,8 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import GlassCard from "@/components/atoms/GlassCard";
-import { QrCode, Copy, CheckCircle2, Loader2, UploadCloud, Crown, Users, ArrowRight } from "lucide-react";
+import { QrCode, Copy, CheckCircle2, Loader2, UploadCloud, Crown, Users, ArrowRight, CreditCard, ShieldCheck, AlertCircle } from "lucide-react";
+import { toast } from "sonner"; 
 
 function PaymentContent() {
   const router = useRouter();
@@ -14,6 +15,8 @@ function PaymentContent() {
   const [copied, setCopied] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  const [paymentError, setPaymentError] = useState("");
 
   const [tableBooking, setTableBooking] = useState<any>(null);
   const [upiId, setUpiId] = useState("Loading...");
@@ -29,6 +32,9 @@ function PaymentContent() {
   const [lastName, setLastName] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
   const [partnerData, setPartnerData] = useState<any>(null);
+
+  // 🚀 THE FIX: Initial State is now "loading" to prevent UI flicker
+  const [paymentMode, setPaymentMode] = useState("loading");
 
   useEffect(() => {
     const fName = searchParams.get("firstName") || "";
@@ -76,9 +82,16 @@ function PaymentContent() {
             setUpiId(currentEvent.upiId || "No UPI Set");
             setQrCode(currentEvent.qrCode || "");
             setEventPrices({ stag: Number(currentEvent.stagPrice) || 0, couple: Number(currentEvent.couplePrice) || 0 });
+            setPaymentMode(currentEvent.paymentMode || "manual");
+            return;
           }
         }
-      } catch (e) {}
+        // Fallback if event not found
+        setPaymentMode("manual");
+      } catch (e) {
+        // Fallback on error
+        setPaymentMode("manual");
+      }
     };
 
     const savedTable = localStorage.getItem("pendingTable");
@@ -88,6 +101,13 @@ function PaymentContent() {
 
     fetchGuestDetails();
     fetchSettings();
+
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => { document.body.removeChild(script); };
   }, [searchParams]);
 
   const copyToClipboard = () => {
@@ -105,7 +125,6 @@ function PaymentContent() {
           const canvas = document.createElement("canvas");
           let width = img.width;
           let height = img.height;
-          // 🚀 LOWERED MAX_SIZE to 800 to prevent Firebase 1MB Limit Crash on Upgrade
           const MAX_SIZE = 800;
           if (width > height && width > MAX_SIZE) {
             height *= MAX_SIZE / width;
@@ -118,7 +137,6 @@ function PaymentContent() {
           canvas.height = height;
           const ctx = canvas.getContext("2d");
           ctx?.drawImage(img, 0, 0, width, height);
-          // 🚀 LOWERED QUALITY TO 0.6 FOR MAXIMUM COMPRESSION
           setScreenshot(canvas.toDataURL("image/jpeg", 0.6));
         };
         img.src = reader.result as string;
@@ -127,7 +145,6 @@ function PaymentContent() {
     }
   };
 
-  // 🚀 MATH ENGINE
   let targetAmount = baseAmount; 
   if (tableBooking) {
     targetAmount = Number(tableBooking.table.minSpend);
@@ -138,9 +155,10 @@ function PaymentContent() {
   
   const finalAmountToPay = Math.max(0, targetAmount - previouslyPaid);
 
-  const handleSubmit = async () => {
+  const handleManualSubmit = async () => {
     if (!screenshot && finalAmountToPay > 0) return alert("Please upload the payment screenshot!");
     setLoading(true);
+    setPaymentError("");
     
     try {
       const payload = { 
@@ -158,6 +176,105 @@ function PaymentContent() {
     } catch (error) { alert("Server Error."); } finally { setLoading(false); }
   };
 
+  const handleRazorpayPayment = async () => {
+    if (finalAmountToPay === 0) {
+      handleManualSubmit();
+      return;
+    }
+
+    setLoading(true);
+    setPaymentError("");
+
+    try {
+      const resOrder = await fetch("/api/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, amount: finalAmountToPay })
+      });
+      const orderData = await resOrder.json();
+
+      if (!orderData.success) {
+        setPaymentError("Gateway Initialization Failed. Check Admin Keys.");
+        setLoading(false);
+        return;
+      }
+
+      const payload = { 
+        id: guestId, firstName, lastName, mobileNumber, eventId, entryType, isUpgrade, 
+        previousAmount: previouslyPaid, amount: finalAmountToPay, 
+        tableId: tableBooking?.table?.id || null, isCaptain: !!tableBooking || entryType === "Group", 
+        subOrdinates: tableBooking?.subOrdinates || [], partnerDetails: partnerData
+      };
+
+      const options = {
+        key: orderData.keyId,
+        amount: Math.round(finalAmountToPay * 100),
+        currency: "INR",
+        name: "Event Reservation",
+        description: `Pass: ${entryType}`,
+        order_id: orderData.orderId,
+        handler: async function (response: any) {
+          toast.loading("Verifying your payment...");
+          
+          const verifyRes = await fetch("/api/razorpay/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              payload: payload
+            }),
+          });
+          
+          const verifyData = await verifyRes.json();
+          if (verifyData.success) {
+            localStorage.removeItem("pendingTable"); 
+            router.push(`/dashboard?firstName=${firstName}&lastName=${lastName}&eventId=${eventId}`); 
+          } else {
+            setPaymentError("Payment verification failed! If money was deducted, please contact support.");
+            setLoading(false);
+          }
+        },
+        prefill: {
+          name: `${firstName} ${lastName}`,
+          contact: mobileNumber,
+        },
+        theme: {
+          color: "#f59e0b", 
+        },
+        modal: {
+          ondismiss: function() {
+            setLoading(false);
+            setPaymentError("Payment cancelled or interrupted.");
+          }
+        }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      
+      rzp.on("payment.failed", async function (response: any) {
+        setLoading(true);
+        try {
+           await fetch("/api/razorpay/failed", {
+             method: "POST",
+             headers: { "Content-Type": "application/json" },
+             body: JSON.stringify({ payload })
+           });
+        } catch(e) {}
+        
+        setPaymentError(`${response.error.reason} - ${response.error.description}`);
+        setLoading(false);
+      });
+      
+      rzp.open();
+
+    } catch (err) {
+      setPaymentError("Error initializing secure connection.");
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-md p-8 bg-black/40 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl">
       <div className="text-center mb-6">
@@ -167,7 +284,7 @@ function PaymentContent() {
         <h1 className="text-2xl font-light mb-2">Complete Reservation</h1>
       </div>
 
-      {isUpgrade && previouslyPaid > 0 && (
+      {isUpgrade && previouslyPaid > 0 && paymentMode !== "loading" && (
         <div className="mb-6 bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-left shadow-[0_0_20px_rgba(59,130,246,0.1)]">
           <h3 className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-1 flex items-center gap-2"><ArrowRight className="w-4 h-4"/> Pass Upgrade</h3>
           <p className="text-zinc-300 text-sm font-medium">Upgrading to {tableBooking ? `VIP Table (${tableBooking.table.tableName})` : entryType}</p>
@@ -175,7 +292,7 @@ function PaymentContent() {
         </div>
       )}
 
-      {tableBooking && (
+      {tableBooking && paymentMode !== "loading" && (
         <div className="mb-6 bg-amber-500/5 border border-amber-500/20 rounded-xl p-5 text-left shadow-[0_0_20px_rgba(245,158,11,0.05)]">
           <h3 className="text-amber-500 text-sm font-bold uppercase tracking-widest mb-2 flex items-center gap-2"><Crown className="w-4 h-4"/> VIP Table: {tableBooking.table.tableName}</h3>
           <p className="text-zinc-300 text-sm mb-3 flex items-center gap-2 font-medium"><Users className="w-4 h-4 text-zinc-400"/> You (Captain) + {tableBooking.subOrdinates.length} Pax</p>
@@ -184,30 +301,67 @@ function PaymentContent() {
         </div>
       )}
 
-      <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-6 text-center mb-6">
-        <p className="text-amber-500/70 text-sm uppercase tracking-widest mb-1">Balance to Pay</p>
-        <h2 className="text-4xl font-bold text-white font-mono">₹{finalAmountToPay}</h2>
-      </div>
+      {paymentError && (
+        <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl text-center mb-6 animate-in fade-in zoom-in">
+          <AlertCircle className="w-6 h-6 text-red-400 mx-auto mb-2" />
+          <h3 className="text-red-400 font-bold text-sm uppercase tracking-widest">Transaction Failed</h3>
+          <p className="text-xs text-red-300 mt-1">{paymentError}</p>
+          <p className="text-xs text-neutral-400 mt-2">Don't worry, your money is safe. Please click below to try again.</p>
+        </div>
+      )}
+
+      {/* 🚀 THE FIX: Dynamic Loader vs Amount Display */}
+      {paymentMode === "loading" ? (
+        <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-6 text-center mb-6 flex justify-center items-center h-[90px]">
+           <Loader2 className="w-6 h-6 animate-spin text-amber-500/50" />
+        </div>
+      ) : (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-6 text-center mb-6 animate-in fade-in">
+          <p className="text-amber-500/70 text-sm uppercase tracking-widest mb-1">Total Due</p>
+          <h2 className="text-4xl font-bold text-white font-mono">₹{finalAmountToPay}</h2>
+        </div>
+      )}
 
       <div className="space-y-6">
-        <div className="bg-white p-2 rounded-xl w-48 h-48 mx-auto flex items-center justify-center overflow-hidden">
-           {qrCode ? <img src={qrCode} alt="Payment QR" className="w-full h-full object-contain rounded-lg" /> : <div className="text-neutral-400 text-sm text-center">QR Code<br/>Not Configured</div>}
-        </div>
+        {paymentMode === "loading" ? (
+          // 🚀 THE FIX: Gateway Loading Skeleton
+          <div className="py-12 flex flex-col items-center justify-center animate-pulse">
+            <Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-4" />
+            <p className="text-xs text-neutral-500 uppercase tracking-widest">Initializing Secure Gateway...</p>
+          </div>
+        ) : paymentMode === "manual" ? (
+          <>
+            <div className="bg-white p-2 rounded-xl w-48 h-48 mx-auto flex items-center justify-center overflow-hidden">
+               {qrCode ? <img src={qrCode} alt="Payment QR" className="w-full h-full object-contain rounded-lg" /> : <div className="text-neutral-400 text-sm text-center">QR Code<br/>Not Configured</div>}
+            </div>
 
-        <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex items-center justify-between font-mono text-sm">
-          <span>{upiId}</span>
-          <button onClick={copyToClipboard} className="text-amber-500">{copied ? <CheckCircle2 className="w-5 h-5 text-green-400" /> : <Copy className="w-5 h-5" />}</button>
-        </div>
+            <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex items-center justify-between font-mono text-sm">
+              <span>{upiId}</span>
+              <button onClick={copyToClipboard} className="text-amber-500">{copied ? <CheckCircle2 className="w-5 h-5 text-green-400" /> : <Copy className="w-5 h-5" />}</button>
+            </div>
 
-        <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-white/20 rounded-lg cursor-pointer hover:bg-white/5 overflow-hidden relative transition-colors">
-          {screenshot ? <img src={screenshot} className="absolute inset-0 w-full h-full object-cover opacity-60" /> : <UploadCloud className="w-8 h-8 text-neutral-400" />}
-          <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-          {!screenshot && <span className="mt-2 text-xs text-zinc-500 uppercase tracking-widest">Upload Screenshot</span>}
-        </label>
+            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-white/20 rounded-lg cursor-pointer hover:bg-white/5 overflow-hidden relative transition-colors">
+              {screenshot ? <img src={screenshot} className="absolute inset-0 w-full h-full object-cover opacity-60" /> : <UploadCloud className="w-8 h-8 text-neutral-400" />}
+              <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+              {!screenshot && <span className="mt-2 text-xs text-zinc-500 uppercase tracking-widest">Upload Screenshot</span>}
+            </label>
 
-        <button onClick={handleSubmit} disabled={loading || (!screenshot && finalAmountToPay > 0)} className="w-full bg-amber-500 text-black py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-amber-600 active:scale-95 transition-all flex justify-center items-center">
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit Reservation"}
-        </button>
+            <button onClick={handleManualSubmit} disabled={loading || (!screenshot && finalAmountToPay > 0)} className="w-full bg-amber-500 text-black py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-amber-600 active:scale-95 transition-all flex justify-center items-center">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit Screenshot"}
+            </button>
+          </>
+        ) : (
+          <div className="pt-2 animate-in fade-in">
+            <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl text-center mb-6">
+              <ShieldCheck className="w-6 h-6 text-blue-400 mx-auto mb-2" />
+              <p className="text-xs text-blue-300 font-medium">Your payment is secured by Razorpay Gateway. Verification is instant.</p>
+            </div>
+            
+            <button onClick={handleRazorpayPayment} disabled={loading} className="w-full bg-amber-500 text-black py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-amber-600 active:scale-95 transition-all flex justify-center items-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CreditCard className="w-5 h-5" /> {paymentError ? "Retry Payment" : "Pay Now Securely"}</>}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
