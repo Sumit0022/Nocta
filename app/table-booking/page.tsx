@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Crown, Users, ArrowRight, UserPlus, Loader2 } from "lucide-react";
+import { Crown, Users, ArrowRight, UserPlus, Loader2, User } from "lucide-react";
 import GlassCard from "@/components/atoms/GlassCard";
 
 function TableBookingContent() {
@@ -17,9 +17,18 @@ function TableBookingContent() {
   const eventId = searchParams.get("eventId") || "";
   const guestId = searchParams.get("guestId") || "";
 
+  // 🚀 TICKET DETAILS
+  const entryType = searchParams.get("entryType") || "Stag";
+  const partnerFirstName = searchParams.get("partnerFirstName") || "";
+  const partnerLastName = searchParams.get("partnerLastName") || "";
+  const partnerMobile = searchParams.get("partnerMobile") || "";
+
+  // 🚀 UPGRADE MISSING LINK FIX
+  const isUpgrade = searchParams.get("isUpgrade") === "true";
+  const amountPaid = searchParams.get("amountPaid") || "0";
+
   const [tables, setTables] = useState<any[]>([]);
   const [selectedTable, setSelectedTable] = useState<any>(null);
-  // 🚀 FIXED: Ab Name ki jagah First Name aur Last Name store hoga
   const [subOrdinates, setSubOrdinates] = useState<{firstName: string, lastName: string, phone: string}[]>([]);
 
   useEffect(() => {
@@ -40,9 +49,20 @@ function TableBookingContent() {
       setSubOrdinates([]);
       return;
     }
+    
     setSelectedTable(table);
     const paxCount = table.capacity - 1; 
-    setSubOrdinates(Array(paxCount).fill({ firstName: "", lastName: "", phone: "" }));
+
+    // SMART AUTO-FILL FOR COUPLES
+    const initialSubOrdinates = Array(paxCount).fill({ firstName: "", lastName: "", phone: "" });
+    if (entryType === "Couple" && paxCount > 0) {
+      initialSubOrdinates[0] = {
+        firstName: partnerFirstName,
+        lastName: partnerLastName,
+        phone: partnerMobile
+      };
+    }
+    setSubOrdinates(initialSubOrdinates);
   };
 
   const handleSubOrdinateChange = (index: number, field: string, value: string) => {
@@ -52,16 +72,27 @@ function TableBookingContent() {
   };
 
   const proceedToPayment = () => {
+    // GROUP FORCE TABLE VALIDATION
+    if (entryType === "Group" && !selectedTable) {
+      return alert("Groups must reserve a VIP table to proceed. General Entry is not available for Group selection.");
+    }
+
     if (selectedTable) {
       const incomplete = subOrdinates.some(sub => !sub.firstName || !sub.lastName || !sub.phone);
       if (incomplete) return alert("Please fill complete details (First & Last Name) for all Sub-ordinates to issue their passes.");
-      
       localStorage.setItem("pendingTable", JSON.stringify({ table: selectedTable, subOrdinates }));
     } else {
       localStorage.removeItem("pendingTable");
     }
     
-    router.push(`/payment?firstName=${firstName}&lastName=${lastName}&eventId=${eventId}&guestId=${guestId}`);
+    // 🚀 FIXED: Passed isUpgrade and amountPaid to Payment Page!
+    const queryParams = new URLSearchParams({
+      firstName, lastName, eventId, guestId, entryType,
+      ...(entryType === "Couple" && !selectedTable && { partnerFirstName, partnerLastName, partnerMobile }),
+      ...(isUpgrade && { isUpgrade: "true", amountPaid }) 
+    }).toString();
+
+    router.push(`/payment?${queryParams}`);
   };
 
   return (
@@ -70,8 +101,15 @@ function TableBookingContent() {
         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="w-16 h-16 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
           <Crown className="w-8 h-8" />
         </motion.div>
-        <h1 className="text-3xl md:text-4xl font-black uppercase tracking-widest mb-2">Upgrade to VIP</h1>
-        <p className="text-zinc-400 text-sm">Would you like to reserve a premium table? (Optional)</p>
+        
+        <h1 className="text-3xl md:text-4xl font-black uppercase tracking-widest mb-2">
+          {entryType === "Group" ? "Select Your VIP Table" : "Upgrade to VIP"}
+        </h1>
+        <p className="text-zinc-400 text-sm">
+          {entryType === "Group" 
+            ? "Table reservation is mandatory for group bookings." 
+            : "Would you like to reserve a premium table? (Optional)"}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
@@ -101,19 +139,46 @@ function TableBookingContent() {
               <div className="space-y-6">
                 {subOrdinates.map((sub, idx) => (
                   <div key={idx} className="flex flex-col gap-3 pb-4 border-b border-white/5 last:border-0 last:pb-0">
-                    <p className="text-xs uppercase tracking-widest text-zinc-500">Guest {idx + 1}</p>
+                    
+                    <p className="text-xs uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+                      Guest {idx + 1} 
+                      {entryType === "Couple" && idx === 0 && <span className="bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded text-[10px] flex items-center gap-1"><User className="w-3 h-3"/> Partner</span>}
+                    </p>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div className="relative">
                         <UserPlus className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                        <input type="text" placeholder="First Name" value={sub.firstName} onChange={(e) => handleSubOrdinateChange(idx, "firstName", e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm text-white outline-none focus:border-amber-500/50" />
+                        <input 
+                          type="text" 
+                          placeholder="First Name" 
+                          value={sub.firstName} 
+                          onChange={(e) => handleSubOrdinateChange(idx, "firstName", e.target.value)} 
+                          className={`w-full bg-black/50 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm text-white outline-none focus:border-amber-500/50 ${entryType === "Couple" && idx === 0 ? "opacity-75 cursor-not-allowed" : ""}`} 
+                          readOnly={entryType === "Couple" && idx === 0} 
+                        />
                       </div>
                       <div className="relative">
-                        <input type="text" placeholder="Last Name" value={sub.lastName} onChange={(e) => handleSubOrdinateChange(idx, "lastName", e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-4 text-sm text-white outline-none focus:border-amber-500/50" />
+                        <input 
+                          type="text" 
+                          placeholder="Last Name" 
+                          value={sub.lastName} 
+                          onChange={(e) => handleSubOrdinateChange(idx, "lastName", e.target.value)} 
+                          className={`w-full bg-black/50 border border-white/10 rounded-xl px-4 py-4 text-sm text-white outline-none focus:border-amber-500/50 ${entryType === "Couple" && idx === 0 ? "opacity-75 cursor-not-allowed" : ""}`} 
+                          readOnly={entryType === "Couple" && idx === 0} 
+                        />
                       </div>
                     </div>
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">+91</span>
-                      <input type="text" maxLength={10} placeholder="Mobile Number" value={sub.phone} onChange={(e) => handleSubOrdinateChange(idx, "phone", e.target.value.replace(/[^0-9]/g, ''))} className="w-full bg-black/50 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm text-white outline-none focus:border-amber-500/50" />
+                      <input 
+                        type="text" 
+                        maxLength={10} 
+                        placeholder="Mobile Number" 
+                        value={sub.phone} 
+                        onChange={(e) => handleSubOrdinateChange(idx, "phone", e.target.value.replace(/[^0-9]/g, ''))} 
+                        className={`w-full bg-black/50 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-sm text-white outline-none focus:border-amber-500/50 ${entryType === "Couple" && idx === 0 ? "opacity-75 cursor-not-allowed" : ""}`} 
+                        readOnly={entryType === "Couple" && idx === 0} 
+                      />
                     </div>
                   </div>
                 ))}
@@ -124,10 +189,11 @@ function TableBookingContent() {
       </AnimatePresence>
 
       <div className="flex flex-col sm:flex-row items-center gap-4">
-        <button onClick={proceedToPayment} className="w-full sm:flex-1 bg-amber-500 text-black py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-amber-600 active:scale-95 transition-all flex justify-center items-center gap-2">
+        <button onClick={proceedToPayment} className="w-full sm:flex-1 bg-amber-500 text-black py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-amber-600 active:scale-95 transition-all flex justify-center items-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
           Proceed to Payment <ArrowRight className="w-5 h-5" />
         </button>
-        {!selectedTable && (
+        
+        {!selectedTable && entryType !== "Group" && (
           <button onClick={proceedToPayment} className="w-full sm:flex-1 bg-white/5 border border-white/10 text-white py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-white/10 active:scale-95 transition-all flex justify-center items-center">
             Skip, General Entry Only
           </button>

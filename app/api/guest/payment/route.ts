@@ -5,38 +5,105 @@ import { collection, query, where, getDocs, doc, updateDoc, addDoc, getDoc } fro
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { id, _id, firstName, lastName, screenshot, tableId, isCaptain, subOrdinates } = body;
+    const { 
+      id, _id, firstName, lastName, mobileNumber, eventId: payloadEventId, 
+      entryType, isUpgrade, previousAmount, amount, 
+      screenshot, tableId, isCaptain, subOrdinates, partnerDetails 
+    } = body;
 
     let guestId = id || _id;
+    let finalEventId = payloadEventId || "";
 
-    if (!guestId) {
-      if (!firstName || !lastName) {
-         return NextResponse.json({ success: false, error: "Name or ID missing" }, { status: 400 });
-      }
-      const q = query(collection(db, "guests"), where("firstName", "==", firstName), where("lastName", "==", lastName));
-      const snapshot = await getDocs(q);
+    const guestsCol = collection(db, "guests");
 
-      if (snapshot.empty) {
-        return NextResponse.json({ success: false, error: "Guest not found" }, { status: 404 });
-      }
-      guestId = snapshot.docs[0].id;
-    }
-
-    const captainDoc = await getDoc(doc(db, "guests", guestId));
-    let eventId = "";
-    if (captainDoc.exists()) {
-      eventId = captainDoc.data().eventId || "";
-    }
-
-    const guestRef = doc(db, "guests", guestId);
-    const updateData: any = {
+    // 🚀 NEW PAYMENT RECORD OBJECT (To store in history)
+    const newPaymentRecord = {
       screenshot: screenshot,
-      rsvpStatus: "Need Verification", 
-      isCaptain: isCaptain || false
+      amountPaid: Number(amount) || 0, // Sirf wo amount jo abhi pay kiya gaya hai
+      date: new Date().toISOString(),
+      type: entryType || "Stag"
     };
 
+    // 🚀 SCENARIO 1: COMPLETELY NEW PUBLIC GUEST (No ID exists)
+    if (!guestId) {
+      if (!firstName || !lastName || !mobileNumber) {
+        return NextResponse.json({ success: false, error: "Missing required guest details" }, { status: 400 });
+      }
+      
+      const q = query(guestsCol, where("mobileNumber", "==", String(mobileNumber)), where("eventId", "==", finalEventId));
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        return NextResponse.json({ success: false, error: "This mobile number is already registered." }, { status: 400 });
+      }
+
+      // 🟢 Create the New Guest Record
+      const newGuestDoc = await addDoc(guestsCol, {
+        firstName,
+        lastName,
+        mobileNumber: String(mobileNumber),
+        eventId: finalEventId,
+        amount: Number(amount) || 0,
+        entryType: entryType || "Stag",
+        rsvpStatus: "Need Verification", 
+        screenshot: screenshot, // Primary display
+        paymentHistory: [newPaymentRecord], // 🚀 HISTORY INITIATED
+        createdAt: new Date().toISOString(),
+        source: "public_registration"
+      });
+
+      guestId = newGuestDoc.id; 
+    } 
+    
+    // 🚀 SCENARIO 2: EXISTING GUEST (Normal Payment or Upgrade)
+    else {
+      const captainDoc = await getDoc(doc(db, "guests", guestId));
+      if (!captainDoc.exists()) {
+        return NextResponse.json({ success: false, error: "Guest record not found" }, { status: 404 });
+      }
+      
+      finalEventId = captainDoc.data().eventId || finalEventId;
+      
+      // 🚀 MIGRATION: Fetch existing history OR migrate the old single screenshot to an array
+      let existingHistory = captainDoc.data().paymentHistory || [];
+      if (existingHistory.length === 0 && captainDoc.data().screenshot) {
+        existingHistory.push({
+          screenshot: captainDoc.data().screenshot,
+          amountPaid: Number(captainDoc.data().amount) || 0,
+          date: captainDoc.data().createdAt || new Date().toISOString(),
+          type: captainDoc.data().entryType || "Stag"
+        });
+      }
+
+      // Append the new payment to the history
+      existingHistory.push(newPaymentRecord);
+      
+      const updateData: any = {
+        screenshot: screenshot, // Keep latest as primary for list view
+        paymentHistory: existingHistory, // 🚀 UPDATED HISTORY SAVED
+        rsvpStatus: "Need Verification", 
+        isCaptain: isCaptain || false,
+        entryType: entryType || captainDoc.data().entryType
+      };
+
+      // 💰 UPGRADE MATH LOGIC
+      if (isUpgrade) {
+        updateData.amount = Number(previousAmount || 0) + Number(amount || 0);
+      } else {
+        updateData.amount = Number(amount || captainDoc.data().amount || 0);
+      }
+
+      const guestRef = doc(db, "guests", guestId);
+      await updateDoc(guestRef, updateData);
+    }
+
+    // --- FROM HERE, GUEST ID IS GUARANTEED ---
+
+    // 🚀 TABLE ASSIGNMENT LOGIC
     if (tableId) {
-      updateData.tableId = tableId;
+      const guestRef = doc(db, "guests", guestId);
+      await updateDoc(guestRef, { tableId: tableId, isCaptain: true });
+
       const tableRef = doc(db, "tables", tableId);
       await updateDoc(tableRef, {
         status: "Requested",
@@ -44,31 +111,48 @@ export async function POST(req: Request) {
       });
     }
 
-    await updateDoc(guestRef, updateData);
+    // 🚀 PARTNER LOGIC (For Couples NOT taking a table)
+    let processedSubOrdinates = subOrdinates || [];
+    
+    if (entryType === "Couple" && !tableId && partnerDetails) {
+      processedSubOrdinates = [{
+        firstName: partnerDetails.firstName,
+        lastName: partnerDetails.lastName,
+        phone: partnerDetails.phone
+      }];
+    }
 
-    // 🚀 NEW LOGIC: Ab Sub-ordinates ka direct First Name aur Last Name DB me jayega
-    if (isCaptain && Array.isArray(subOrdinates) && subOrdinates.length > 0) {
-      const guestsCol = collection(db, "guests");
-      
-      for (const sub of subOrdinates) {
+    // 🚀 SUB-ORDINATES SAVING LOGIC
+    if (processedSubOrdinates && processedSubOrdinates.length > 0) {
+      // Clean old subs on upgrade to prevent duplication
+      if (isUpgrade) {
+         const oldSubsQuery = query(guestsCol, where("hostId", "==", guestId));
+         const oldSubsSnapshot = await getDocs(oldSubsQuery);
+         const deletePromises = oldSubsSnapshot.docs.map(d => updateDoc(doc(db, "guests", d.id), { rsvpStatus: "Cancelled" })); 
+         await Promise.all(deletePromises);
+      }
+
+      for (const sub of processedSubOrdinates) {
+        if (!sub.firstName) continue; 
+
         const newSubGuest = {
-          eventId: eventId,
-          firstName: sub.firstName || "Guest",
+          eventId: finalEventId,
+          firstName: sub.firstName,
           lastName: sub.lastName || "",
-          mobileNumber: sub.phone,
+          mobileNumber: String(sub.phone),
           isSubordinate: true,
           hostId: guestId, 
           tableId: tableId || null,
           rsvpStatus: "Need Verification", 
           screenshot: screenshot, 
           createdAt: new Date().toISOString(),
-          source: "table_booking_pax"
+          source: tableId ? "table_booking_pax" : "couple_partner"
         };
         await addDoc(guestsCol, newSubGuest);
       }
     }
 
-    return NextResponse.json({ success: true, message: "Payment & Reservation submitted" });
+    return NextResponse.json({ success: true, message: "Payment & Reservation submitted successfully!" });
   } catch (error: any) {
     console.error("Payment Error:", error);
     return NextResponse.json({ success: false, error: "Server error" }, { status: 500 });
