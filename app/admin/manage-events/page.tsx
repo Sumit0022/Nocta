@@ -9,7 +9,7 @@ import GlassCard from "@/components/atoms/GlassCard";
 import { toast } from "sonner";
 import { 
   Calendar, Clock, MapPin, Users, PlusCircle, Trash2, ArrowLeft, Loader2, X, ArrowRight, History 
-} from "lucide-react"; // 🚀 FIXED: Imported the missing ArrowRight and History icons!
+} from "lucide-react"; 
 
 export default function ManageEventsPage() {
   const router = useRouter();
@@ -26,10 +26,18 @@ export default function ManageEventsPage() {
     mainTitle: "", mainHeadline: "", eventDate: "", eventTime: "", eventVenue: "", stagPrice: "", couplePrice: ""
   });
 
+  // 🚀 FIXED DATE LOGIC: Force strict local parsing to prevent timezone jumps
   const getEventStatus = (dateStr: string, timeStr: string) => {
-    if (!dateStr || !timeStr) return "Active";
-    const eventDateTime = new Date(`${dateStr}T${timeStr}`);
-    if (isNaN(eventDateTime.getTime())) return "Active";
+    if (!dateStr || !timeStr) return "Active"; 
+    
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    
+    // Create Date explicitly avoiding UTC 'Z' or ISO string bugs
+    const eventDateTime = new Date(year, month - 1, day, hours, minutes);
+    
+    if (isNaN(eventDateTime.getTime())) return "Active"; 
+    
     const lockTime = new Date(eventDateTime.getTime() + 18 * 60 * 60 * 1000);
     return new Date() > lockTime ? "Completed" : "Active";
   };
@@ -288,7 +296,6 @@ export default function ManageEventsPage() {
                   <p className="text-sm text-neutral-500">Create a new event hub to get started.</p>
                 </div>
               )}
-              {/* 🚀 FIXED THE TYPO HERE TOO (--- changed to ===) */}
               {activeTab === "past" && pastEvents.length === 0 && (
                 <div className="col-span-full py-20 text-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
                   <History className="w-12 h-12 text-neutral-600 mx-auto mb-4" />

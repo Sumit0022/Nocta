@@ -13,7 +13,7 @@ import {
   Loader2, X, Edit, Eye, AlertCircle, Trash2, Search, 
   ArrowLeft, Printer, Settings, UploadCloud, Sparkles,
   LogOut, Ticket, ScanLine, Crown, User, Lock,
-  Database, ShieldAlert, UserX, UserCheck, ChevronDown, ChevronUp, History, Heart, CalendarClock, ExternalLink, CreditCard, LayoutDashboard, PlusCircle
+  Database, ShieldAlert, UserX, UserCheck, ChevronDown, ChevronUp, History, Heart, ExternalLink, CreditCard, LayoutDashboard, PlusCircle
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { QRCodeSVG } from "qrcode.react"; 
@@ -63,10 +63,18 @@ export default function AdminDashboard() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedResult, setScannedResult] = useState<any>(null);
 
+  // 🚀 FIXED DATE LOGIC: Force strict local parsing to prevent timezone jumps
   const getEventStatus = (dateStr: string, timeStr: string) => {
     if (!dateStr || !timeStr) return "Active"; 
-    const eventDateTime = new Date(`${dateStr}T${timeStr}`);
+    
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    
+    // Create Date explicitly avoiding UTC 'Z' or ISO string bugs
+    const eventDateTime = new Date(year, month - 1, day, hours, minutes);
+    
     if (isNaN(eventDateTime.getTime())) return "Active"; 
+    
     const lockTime = new Date(eventDateTime.getTime() + 18 * 60 * 60 * 1000);
     return new Date() > lockTime ? "Completed" : "Active";
   };
@@ -917,13 +925,11 @@ export default function AdminDashboard() {
                      <span className="text-white font-mono font-bold">₹{selectedGuest.amount}</span>
                   </div>
                   
-                  {/* 🚀 THE SMART PAYMENT HISTORY RENDERER */}
                   <div className="w-full overflow-y-auto pr-1 space-y-3 mt-4">
                     {selectedGuest.paymentHistory && selectedGuest.paymentHistory.length > 0 ? (
                       selectedGuest.paymentHistory.map((hist: any, i: number) => (
                         <div key={i} className={`flex gap-3 sm:gap-4 items-center p-3 rounded-lg border ${hist.method === 'razorpay_auto' ? 'bg-blue-900/10 border-blue-500/20' : 'bg-black/40 border-white/5'}`}>
                            
-                           {/* 🟢 Razorpay vs Manual Icon/Image */}
                            {hist.method === 'razorpay_auto' ? (
                              <div className="w-16 h-16 bg-blue-500/20 text-blue-400 rounded flex items-center justify-center border border-blue-500/30 flex-shrink-0">
                                <CreditCard className="w-6 h-6" />
@@ -940,7 +946,6 @@ export default function AdminDashboard() {
                               </p>
                            </div>
                            
-                           {/* 🟢 Only show Full Image button for Manual (Screenshots) */}
                            {hist.method !== 'razorpay_auto' && hist.screenshot && (
                              <button 
                                onClick={() => openBase64InNewTab(hist.screenshot)} 
@@ -953,7 +958,6 @@ export default function AdminDashboard() {
                       ))
                     ) : (
                       <div className="w-full">
-                         {/* Fallback for Legacy Screenshots without History Array */}
                          {selectedGuest.screenshot ? (
                             <div className="flex gap-3 sm:gap-4 items-center bg-black/40 p-3 rounded-lg border border-white/5">
                                <img src={selectedGuest.screenshot} className="w-16 h-16 object-cover rounded border border-white/20 flex-shrink-0" />
@@ -977,7 +981,6 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {/* 🚀 EXPLICIT FAILED OR CONFIRMED OPTIONS */}
                 <div className="flex flex-col sm:flex-row gap-3 w-full mt-auto">
                   <button onClick={() => handleVerifyAction('Failed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-red-500/10 text-red-400 border border-red-500/20 py-3 rounded-lg hover:bg-red-500/20 transition-all font-bold tracking-wide">Mark as Failed</button>
                   <button onClick={() => handleVerifyAction('Confirmed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-green-500/10 text-green-400 border border-green-500/20 py-3 rounded-lg hover:bg-green-500/20 transition-all font-bold tracking-wide">Approve & Confirm</button>
