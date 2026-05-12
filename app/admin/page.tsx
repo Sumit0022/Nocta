@@ -12,8 +12,8 @@ import {
   Users, CheckCircle2, IndianRupee, MessageCircle, Plus, 
   Loader2, X, Edit, Eye, AlertCircle, Trash2, Search, 
   ArrowLeft, Printer, Settings, UploadCloud, Sparkles,
-  LogOut, Ticket, ScanLine, PlusCircle, Crown, User, Lock,
-  Database, ShieldAlert, UserX, UserCheck, ChevronDown, ChevronUp, History, Heart, CalendarClock, ExternalLink, CreditCard
+  LogOut, Ticket, ScanLine, Crown, User, Lock,
+  Database, ShieldAlert, UserX, UserCheck, ChevronDown, ChevronUp, History, Heart, CalendarClock, ExternalLink, CreditCard, LayoutDashboard, PlusCircle
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { QRCodeSVG } from "qrcode.react"; 
@@ -25,13 +25,7 @@ export default function AdminDashboard() {
 
   const [allEvents, setAllEvents] = useState<any[]>([]); 
   const [activeEventId, setActiveEventId] = useState<string>(""); 
-  const [isEventModalOpen, setIsEventModalOpen] = useState(false); 
-  const [isCreatingEvent, setIsCreatingEvent] = useState(false);
   
-  const [eventFormData, setEventFormData] = useState({
-    mainTitle: "", mainHeadline: "", eventDate: "", eventTime: "", eventVenue: "", stagPrice: "", couplePrice: ""
-  });
-
   const [guests, setGuests] = useState<any[]>([]);
   const [tables, setTables] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
@@ -86,6 +80,7 @@ export default function AdminDashboard() {
     });
     active.sort((a: any, b: any) => new Date(`${a.eventDate}T${a.eventTime}`).getTime() - new Date(`${b.eventDate}T${b.eventTime}`).getTime());
     completed.sort((a: any, b: any) => new Date(`${b.eventDate}T${b.eventTime}`).getTime() - new Date(`${a.eventDate}T${a.eventTime}`).getTime());
+    
     return { activeEvents: active, completedEvents: completed };
   }, [allEvents]);
 
@@ -99,8 +94,6 @@ export default function AdminDashboard() {
       if (result.success && Array.isArray(result.data)) {
         setAllEvents(result.data);
         
-        // 🚀 SMART GLOBAL FALLBACK LOGIC
-        // System kisi bhi dusre event se key dhoondega, warna tera diya hua default use karega!
         const globalKeys = {
           key: result.data.find((e: any) => e.razorpayKey)?.razorpayKey || "rzp_test_SoRUGbeDDagVeE",
           secret: result.data.find((e: any) => e.razorpaySecret)?.razorpaySecret || "CLYCy9UfuDp7kcGtiwoonhEy"
@@ -115,20 +108,23 @@ export default function AdminDashboard() {
           setSettings({
             ...matchedEvent, 
             paymentMode: matchedEvent.paymentMode || "manual", 
-            razorpayKey: matchedEvent.razorpayKey || globalKeys.key, // 🔥 Auto-fill
-            razorpaySecret: matchedEvent.razorpaySecret || globalKeys.secret // 🔥 Auto-fill
+            razorpayKey: matchedEvent.razorpayKey || globalKeys.key, 
+            razorpaySecret: matchedEvent.razorpaySecret || globalKeys.secret 
           });
         } else if (!activeEventId && result.data.length > 0) {
           const firstActive = result.data.find((e: any) => getEventStatus(e.eventDate, e.eventTime) === "Active");
           const targetEvent = firstActive || result.data[0];
-          setActiveEventId(targetEvent.eventId);
-          setSettings({
-            ...targetEvent, 
-            paymentMode: targetEvent.paymentMode || "manual", 
-            razorpayKey: targetEvent.razorpayKey || globalKeys.key, // 🔥 Auto-fill
-            razorpaySecret: targetEvent.razorpaySecret || globalKeys.secret // 🔥 Auto-fill
-          });
-          localStorage.setItem("adminActiveEventId", targetEvent.eventId);
+          
+          if(targetEvent) {
+             setActiveEventId(targetEvent.eventId);
+             setSettings({
+               ...targetEvent, 
+               paymentMode: targetEvent.paymentMode || "manual", 
+               razorpayKey: targetEvent.razorpayKey || globalKeys.key, 
+               razorpaySecret: targetEvent.razorpaySecret || globalKeys.secret 
+             });
+             localStorage.setItem("adminActiveEventId", targetEvent.eventId);
+          }
         }
       }
     } catch (error) { console.error("Fetch events failed:", error); }
@@ -166,7 +162,6 @@ export default function AdminDashboard() {
       fetchGuestsAndTables(activeEventId); 
       const currentEvent = allEvents.find((e: any) => e.eventId === activeEventId);
       
-      // 🚀 Apply fallback when directly switching events too
       const globalKeys = {
         key: allEvents.find((e: any) => e.razorpayKey)?.razorpayKey || "rzp_test_SoRUGbeDDagVeE",
         secret: allEvents.find((e: any) => e.razorpaySecret)?.razorpaySecret || "CLYCy9UfuDp7kcGtiwoonhEy"
@@ -175,35 +170,14 @@ export default function AdminDashboard() {
       if (currentEvent) setSettings({
         ...currentEvent, 
         paymentMode: currentEvent.paymentMode || "manual", 
-        razorpayKey: currentEvent.razorpayKey || globalKeys.key, // 🔥 Auto-fill
-        razorpaySecret: currentEvent.razorpaySecret || globalKeys.secret // 🔥 Auto-fill
+        razorpayKey: currentEvent.razorpayKey || globalKeys.key, 
+        razorpaySecret: currentEvent.razorpaySecret || globalKeys.secret 
       });
     }
   }, [activeEventId, allEvents, view]);
 
   useEffect(() => { if (view === "CRM") fetchCrmData(); }, [view]);
   
-  const handleCreateEvent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsCreatingEvent(true);
-    try {
-      const res = await fetch('/api/admin/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({...eventFormData, paymentMode: "manual"}),
-      });
-      const result = await res.json();
-      if (result.success) {
-        toast.success(`Event Hub Created! Code: ${result.eventId}`);
-        setIsEventModalOpen(false);
-        setEventFormData({ mainTitle: "", mainHeadline: "", eventDate: "", eventTime: "", eventVenue: "", stagPrice: "", couplePrice: "" });
-        await fetchEvents();
-        setActiveEventId(result.eventId);
-        localStorage.setItem("adminActiveEventId", result.eventId); 
-      }
-    } catch (error) { toast.error("Failed to create event"); } finally { setIsCreatingEvent(false); }
-  };
-
   const handleLogout = async () => {
     const res = await fetch('/api/admin/logout', { method: 'POST' });
     if (res.ok) { toast.success("Logged out successfully"); router.push('/admin/login'); }
@@ -514,20 +488,14 @@ export default function AdminDashboard() {
                     }} 
                     className="bg-transparent text-sm outline-none cursor-pointer font-medium text-neutral-300 focus:text-white w-full"
                   >
-                    {allEvents.length === 0 && <option value="">No Active Event</option>}
+                    {activeEvents.length === 0 && <option value="">No Active Events</option>}
                     {activeEvents.length > 0 && (
                       <optgroup label="🟢 Active & Upcoming" className="text-green-500 bg-neutral-900 font-bold">
                         {activeEvents.map((e) => <option key={e.eventId} value={e.eventId} className="text-white font-medium">{e.mainTitle} ({e.eventId})</option>)}
                       </optgroup>
                     )}
-                    {completedEvents.length > 0 && (
-                      <optgroup label="🔒 Past / Completed" className="text-red-400 bg-neutral-900 font-bold mt-2">
-                        {completedEvents.map((e) => <option key={e.eventId} value={e.eventId} className="text-neutral-400 font-medium">{e.mainTitle} (Locked)</option>)}
-                      </optgroup>
-                    )}
                   </select>
                 </div>
-                <button onClick={() => setIsEventModalOpen(true)} className="p-1.5 hover:bg-white/10 rounded-full text-amber-400 transition-colors" title="Create New Event"><PlusCircle className="w-6 h-6" /></button>
               </div>
             )}
           </div>
@@ -544,8 +512,9 @@ export default function AdminDashboard() {
               <button onClick={() => window.print()} className="flex items-center gap-2 bg-purple-500/20 text-purple-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-500/30 no-print flex-grow sm:flex-grow-0 justify-center"><Printer className="w-4 h-4" /> Export</button>
             )}
 
+            {view !== "CRM" && <button onClick={() => router.push("/admin/manage-events")} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 transition-all flex-grow sm:flex-grow-0 justify-center"><LayoutDashboard className="w-4 h-4" /> Manage Events</button>}
             {view !== "CRM" && <button onClick={() => setView("CRM")} className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-500/20 transition-all flex-grow sm:flex-grow-0 justify-center"><Database className="w-4 h-4" /> Global CRM</button>}
-            {view !== "CRM" && isCurrentEventActive && <button onClick={() => setIsScannerOpen(true)} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 shadow-[0_0_15px_rgba(251,191,36,0.15)] transition-all flex-grow sm:flex-grow-0 justify-center"><ScanLine className="w-4 h-4" /> Scan Pass</button>}
+            {view !== "CRM" && isCurrentEventActive && <button onClick={() => setIsScannerOpen(true)} className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.15)] transition-all flex-grow sm:flex-grow-0 justify-center"><ScanLine className="w-4 h-4" /> Scan Pass</button>}
             {view !== "CRM" && <button onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)} className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 transition-all shadow-[0_0_15px_rgba(251,191,36,0.2)] flex-grow sm:flex-grow-0 justify-center">Manage Tables</button>}
             {view !== "CRM" && <button onClick={() => setView("Settings")} className="p-2 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors" title="Settings"><Settings className="w-5 h-5 text-neutral-400" /></button>}
             <button onClick={handleLogout} className="p-2 bg-red-500/10 border border-red-500/20 rounded-lg hover:bg-red-500/20 text-red-400 transition-all flex items-center justify-center" title="Logout Session"><LogOut className="w-5 h-5" /></button>
@@ -808,7 +777,8 @@ export default function AdminDashboard() {
                             ${guest.rsvpStatus === 'Confirmed' ? 'text-green-400 border-green-500/20 bg-green-500/5' : 
                               guest.rsvpStatus === 'Checked-In' ? 'text-purple-400 border-purple-500/40 bg-purple-500/10 font-bold tracking-widest uppercase' :
                               guest.rsvpStatus === 'Need Verification' ? 'text-blue-400 border-blue-500/20 bg-blue-500/10 animate-pulse' :
-                              guest.rsvpStatus === 'Failed' ? 'text-red-400 border-red-500/20 bg-red-500/5' : 'text-amber-400 border-amber-500/20 bg-amber-500/5'}`}
+                              guest.rsvpStatus === 'Failed' ? 'text-red-400 border-red-500/20 bg-red-500/5' :
+                              guest.rsvpStatus === 'Not Attended' ? 'text-zinc-400 border-zinc-500/20 bg-zinc-500/5' : 'text-amber-400 border-amber-500/20 bg-amber-500/5'}`}
                           >{guest.rsvpStatus}</span>
                         </td>
                         <td className="p-4 flex justify-center items-center gap-3 no-print">
@@ -837,67 +807,6 @@ export default function AdminDashboard() {
       </div>
 
       <AnimatePresence>
-        {isEventModalOpen && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="w-full max-w-lg">
-              <GlassCard className="p-6 sm:p-8 relative border-white/10">
-                <button onClick={() => setIsEventModalOpen(false)} className="absolute top-4 right-4 text-neutral-500 hover:text-white"><X className="w-5 h-5"/></button>
-                <h2 className="text-xl sm:text-2xl font-light mb-6 text-white flex items-center gap-3"><PlusCircle className="text-amber-400" /> New Event Hub</h2>
-                
-                <form onSubmit={handleCreateEvent} className="space-y-4">
-                  <input required placeholder="Party Title" className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none focus:border-amber-500/50 text-white" value={eventFormData.mainTitle} onChange={(e) => setEventFormData({...eventFormData, mainTitle: e.target.value})} />
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1"><label className="text-[10px] text-neutral-500 uppercase ml-1">Event Date</label><input type="date" required className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none text-white scheme-dark" value={eventFormData.eventDate} onChange={(e) => setEventFormData({...eventFormData, eventDate: e.target.value})} /></div>
-                    <div className="space-y-1"><label className="text-[10px] text-neutral-500 uppercase ml-1">Event Time</label><input type="time" required className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none text-white scheme-dark" value={eventFormData.eventTime} onChange={(e) => setEventFormData({...eventFormData, eventTime: e.target.value})} /></div>
-                  </div>
-                  
-                  <input placeholder="Venue" className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none focus:border-amber-500/50 text-white" value={eventFormData.eventVenue} onChange={(e) => setEventFormData({...eventFormData, eventVenue: e.target.value})} />
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-white/10">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-neutral-500 uppercase ml-1">Stag Price (₹)</label>
-                      <input type="number" required className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none text-white scheme-dark" value={eventFormData.stagPrice || ""} onChange={(e) => setEventFormData({...eventFormData, stagPrice: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-neutral-500 uppercase ml-1">Couple Price (₹)</label>
-                      <input type="number" required className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none text-white scheme-dark" value={eventFormData.couplePrice || ""} onChange={(e) => setEventFormData({...eventFormData, couplePrice: e.target.value})} />
-                    </div>
-                  </div>
-                  
-                  <button disabled={isCreatingEvent} className="w-full bg-amber-500 text-black py-4 rounded-xl font-bold hover:bg-amber-400 active:scale-95 transition-all mt-4">{isCreatingEvent ? <Loader2 className="animate-spin mx-auto w-6 h-6" /> : "Launch Event Engine 🚀"}</button>
-                </form>
-              </GlassCard>
-            </motion.div>
-          </div>
-        )}
-
-        {isScannerOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md no-print">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="z-10 w-full max-w-md bg-neutral-900 border border-white/10 rounded-3xl overflow-hidden relative shadow-2xl shadow-amber-500/10">
-              <button onClick={() => { setIsScannerOpen(false); setScannedResult(null); }} className="absolute top-4 right-4 z-20 p-2 bg-black/50 hover:bg-white/10 rounded-full text-white transition-all"><X className="w-5 h-5"/></button>
-              {!scannedResult ? (
-                <div className="p-6"><h2 className="text-2xl text-center text-white font-light tracking-wide mb-6">Scan Entry Pass</h2><div className="rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(251,191,36,0.15)] relative"><Scanner onScan={handleScan} /></div><p className="text-center text-neutral-500 text-sm mt-4 animate-pulse">Position QR Code within the frame...</p></div>
-              ) : (
-                <div className="p-6 sm:p-8 text-center bg-gradient-to-b from-neutral-900 to-black">
-                  {scannedResult.error ? (
-                    <div><div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20"><X className="w-10 h-10 text-red-500"/></div><h2 className="text-2xl text-white font-bold">Invalid Pass</h2><p className="text-red-400 font-mono mt-2">{scannedResult.code}</p><p className="text-neutral-400 mt-2 text-sm">This code does not exist in the database.</p></div>
-                  ) : (
-                    <div>
-                      <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20"><CheckCircle2 className="w-10 h-10 text-green-500"/></div>
-                      <h2 className="text-2xl sm:text-3xl text-white font-bold capitalize">{scannedResult.firstName} {scannedResult.lastName}</h2>
-                      <div className="bg-white/5 py-2 px-4 rounded-lg inline-block mt-3 border border-white/10"><p className="text-amber-400 font-mono tracking-widest text-lg font-bold">{scannedResult.entryCode}</p></div>
-                      <p className={`mt-4 uppercase tracking-widest text-xs font-bold ${scannedResult.rsvpStatus === 'Confirmed' ? 'text-green-400' : scannedResult.rsvpStatus === 'Checked-In' ? 'text-purple-400' : 'text-red-400'}`}>Status: {scannedResult.rsvpStatus}</p>
-                      {scannedResult.rsvpStatus !== 'Checked-In' && <button onClick={() => markCheckedIn(scannedResult)} className="mt-8 w-full py-4 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-all active:scale-95 text-lg">Mark as Checked-In</button>}
-                    </div>
-                  )}
-                  <button onClick={() => setScannedResult(null)} className="mt-6 text-neutral-400 hover:text-white transition-colors uppercase tracking-widest text-xs">Scan Another Pass</button>
-                </div>
-              )}
-            </motion.div>
-          </div>
-        )}
-
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -917,7 +826,11 @@ export default function AdminDashboard() {
                         {modalCrmResults.length === 0 && crmAddSearchQuery && <p className="text-xs text-neutral-500 text-center py-2">No guest found in CRM.</p>}
                         {modalCrmResults.map((c: any) => (
                           <div key={c.mobileNumber} onClick={() => { setFormData({...formData, firstName: c.firstName, lastName: c.lastName, mobileNumber: c.mobileNumber}); setIsSearchCrmMode(false); setCrmAddSearchQuery(""); }} className="p-3 bg-white/5 hover:bg-indigo-500/20 border border-white/10 hover:border-indigo-500/30 rounded-lg cursor-pointer flex justify-between items-center transition-all">
-                            <div><p className="text-sm font-bold text-white capitalize">{c.firstName} {c.lastName}</p><p className="text-xs text-neutral-400 font-mono">{c.mobileNumber}</p></div><PlusCircle className="w-4 h-4 text-indigo-400" />
+                            <div>
+                              <p className="text-sm font-bold text-white capitalize">{c.firstName} {c.lastName}</p>
+                              <p className="text-xs text-neutral-400 font-mono">{c.mobileNumber}</p>
+                            </div>
+                            <PlusCircle className="w-4 h-4 text-indigo-400" />
                           </div>
                         ))}
                       </div>
@@ -951,21 +864,33 @@ export default function AdminDashboard() {
                       </AnimatePresence>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div><label className="text-xs text-neutral-400 ml-1">Amount (₹)</label><input type="number" required className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 mt-1 text-white" value={formData.amount} onChange={(e) => setFormData({...formData, amount: Number(e.target.value)})} /></div>
+                        <div>
+                          <label className="text-xs text-neutral-400 ml-1">Amount (₹)</label>
+                          <input type="number" required className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 mt-1 text-white" value={formData.amount} onChange={(e) => setFormData({...formData, amount: Number(e.target.value)})} />
+                        </div>
                         <div>
                           <label className="text-xs text-neutral-400 ml-1">Status</label>
                           <select className="bg-[#1a1a1a] border border-white/10 rounded-lg p-3 w-full outline-none mt-1 text-white" value={formData.rsvpStatus} onChange={(e) => setFormData({...formData, rsvpStatus: e.target.value})}>
-                            <option value="Pending">Pending</option><option value="Need Verification">Need Verification</option><option value="Confirmed">Confirmed</option><option value="Checked-In">Checked-In</option><option value="Failed">Failed</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Need Verification">Need Verification</option>
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Checked-In">Checked-In</option>
+                            <option value="Failed">Failed</option>
+                            <option value="Not Attended">Not Attended</option>
                           </select>
                         </div>
                       </div>
 
                       {!isEditing && (
                         <div className="pt-2 border-t border-white/10 mt-4">
-                          <button type="button" onClick={() => { setIsSearchCrmMode(true); fetchCrmData(); }} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium tracking-wide"><Database className="w-3 h-3" /> Want to add an already existing guest? Search CRM</button>
+                          <button type="button" onClick={() => { setIsSearchCrmMode(true); fetchCrmData(); }} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium tracking-wide">
+                            <Database className="w-3 h-3" /> Want to add an already existing guest? Search CRM
+                          </button>
                         </div>
                       )}
-                      <button disabled={isSubmitting} className="w-full bg-white text-neutral-950 py-3 rounded-lg font-medium hover:bg-neutral-200 mt-6 transition-colors shadow-lg">{isSubmitting ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : "Save Changes"}</button>
+                      <button disabled={isSubmitting} className="w-full bg-white text-neutral-950 py-3 rounded-lg font-medium hover:bg-neutral-200 mt-6 transition-colors shadow-lg">
+                        {isSubmitting ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : "Save Changes"}
+                      </button>
                     </>
                   )}
                 </form>
@@ -974,7 +899,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 🚀 FIXED: VERIFY PAYMENT MODAL (Thumbnail Design + Full Image + Razorpay Support) */}
+        {/* 🚀 CLASSIC VERIFY PAYMENT MODAL RESTORED */}
         {isVerifyModalOpen && selectedGuest && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsVerifyModalOpen(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
@@ -992,7 +917,7 @@ export default function AdminDashboard() {
                      <span className="text-white font-mono font-bold">₹{selectedGuest.amount}</span>
                   </div>
                   
-                  {/* 🚀 THE SMART PAYMENT HISTORY RENDERER (SMALL THUMBNAILS WITH OPEN FULL BUTTON) */}
+                  {/* 🚀 THE SMART PAYMENT HISTORY RENDERER */}
                   <div className="w-full overflow-y-auto pr-1 space-y-3 mt-4">
                     {selectedGuest.paymentHistory && selectedGuest.paymentHistory.length > 0 ? (
                       selectedGuest.paymentHistory.map((hist: any, i: number) => (
@@ -1062,29 +987,6 @@ export default function AdminDashboard() {
           </div>
         )}
       </AnimatePresence>
-
-      <div className="fixed -top-[9999px] -left-[9999px] no-print">
-        {downloadingGuest && (
-          <div id="admin-concert-ticket-export" className="flex w-[800px] h-[300px] bg-neutral-950 text-white font-sans overflow-hidden border border-amber-500/30 rounded-xl relative shadow-2xl">
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-black to-black opacity-80"></div>
-            <div className="w-[580px] p-8 flex flex-col justify-between relative z-10 border-r-2 border-dashed border-neutral-700">
-               <div><h3 className="text-amber-500 tracking-[0.3em] uppercase text-xs font-bold mb-2">VIP ADMISSION</h3><h1 className="text-4xl font-black uppercase tracking-wider text-white drop-shadow-md">{settings.mainTitle || "THE INFINITY EVENT"}</h1><p className="text-neutral-400 mt-1 text-lg italic font-serif">{settings.mainHeadline || "Exclusive Access Only"}</p></div>
-               <div><p className="text-neutral-500 text-xs uppercase tracking-widest mb-1">Admit One</p><h2 className="text-3xl font-bold uppercase tracking-wide text-white">{downloadingGuest.firstName} {downloadingGuest.lastName}</h2></div>
-               <div className="flex gap-10 border-t border-neutral-800 pt-5 mt-2">
-                  <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Date</p><p className="font-bold text-white tracking-wide">{settings.eventDate || "TBA"}</p></div>
-                  <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Time</p><p className="font-bold text-white tracking-wide">{settings.eventTime || "TBA"}</p></div>
-                  {downloadingGuest.tableId && <div><p className="text-amber-500 text-xs uppercase tracking-wider mb-1">VIP Table</p><p className="font-bold text-amber-400 tracking-wide">{tables.find((t: any) => t.id === downloadingGuest.tableId)?.tableName || "Reserved"}</p></div>}
-               </div>
-            </div>
-            <div className="w-[220px] bg-amber-500/5 p-6 flex flex-col items-center justify-center relative z-10">
-               <p className="text-amber-500 text-sm font-bold tracking-[0.2em] mb-4 text-center">SCAN AT GATE</p>
-               <div className="bg-white p-2 rounded-xl mb-4 shadow-[0_0_15px_rgba(251,191,36,0.2)]"><QRCodeSVG value={downloadingGuest.entryCode || "N/A"} size={100} bgColor={"#ffffff"} fgColor={"#000000"} level={"H"} /></div>
-               <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1 text-center">Entry Code</p>
-               <p className="text-xl font-mono font-bold text-white tracking-[0.1em] text-center">{downloadingGuest.entryCode || "N/A"}</p>
-            </div>
-          </div>
-        )}
-      </div>
     </main>
   );
 }
