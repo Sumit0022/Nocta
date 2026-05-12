@@ -16,6 +16,9 @@ function TableBookingContent() {
   const lastName = searchParams.get("lastName") || "";
   const eventId = searchParams.get("eventId") || "";
   const guestId = searchParams.get("guestId") || "";
+  
+  // 🚀 THE FIX: Catch the primary mobile number from URL
+  const mobile = searchParams.get("mobile") || ""; 
 
   // 🚀 TICKET DETAILS
   const entryType = searchParams.get("entryType") || "Stag";
@@ -85,9 +88,9 @@ function TableBookingContent() {
       localStorage.removeItem("pendingTable");
     }
     
-    // 🚀 FIXED: Passed isUpgrade and amountPaid to Payment Page!
+    // 🚀 FIXED: Pass 'mobile' to Payment Page
     const queryParams = new URLSearchParams({
-      firstName, lastName, eventId, guestId, entryType,
+      firstName, lastName, mobile, eventId, guestId, entryType, // Added 'mobile' here
       ...(entryType === "Couple" && !selectedTable && { partnerFirstName, partnerLastName, partnerMobile }),
       ...(isUpgrade && { isUpgrade: "true", amountPaid }) 
     }).toString();
@@ -207,7 +210,7 @@ export default function TableBookingPage() {
   return (
     <main className="min-h-screen w-full bg-[#050505] flex flex-col items-center justify-center px-4 py-12 text-white relative">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-900/10 via-black to-black -z-10" />
-      <Suspense fallback={<div className="flex items-center justify-center"><Loader2 className="animate-spin w-8 h-8 text-amber-500" /></div>}>
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin w-8 h-8 text-amber-500" /></div>}>
         <TableBookingContent />
       </Suspense>
     </main>
