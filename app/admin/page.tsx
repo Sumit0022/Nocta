@@ -63,7 +63,7 @@ export default function AdminDashboard() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedResult, setScannedResult] = useState<any>(null);
 
-  // 🚀 FIXED: BULLETPROOF 18-HOUR FREEZE ENGINE
+  // 🚀 LOGIC UNCHANGED: Bulletproof Date Parser
   const getEventStatus = (dateStr: string, timeStr: string) => {
     if (!dateStr) return "Active"; 
     
@@ -99,7 +99,6 @@ export default function AdminDashboard() {
       
       if (isNaN(eventDateTime.getTime())) return "Active"; 
       
-      // Calculate exactly 18 hours after event commencement
       const lockTime = new Date(eventDateTime.getTime() + 18 * 60 * 60 * 1000);
       return new Date() > lockTime ? "Completed" : "Active";
     } catch (e) {
@@ -120,17 +119,30 @@ export default function AdminDashboard() {
     return { activeEvents: active, completedEvents: completed };
   }, [allEvents]);
 
-  // 🚀 THE MASTER FIX: Only use the database SAVED date to lock the event, NEVER the live typing state.
   const currentSavedEvent = useMemo(() => allEvents.find((e: any) => e.eventId === activeEventId), [allEvents, activeEventId]);
   const isCurrentEventActive = currentSavedEvent 
     ? getEventStatus(currentSavedEvent.eventDate, currentSavedEvent.eventTime) === "Active" 
     : true;
 
+  const fetchWithSafeJSON = async (url: string, options?: any) => {
+    const res = await fetch(url, options);
+    if (!res.ok && res.status === 401) {
+      router.push('/admin/login');
+      throw new Error("Unauthorized");
+    }
+    const text = await res.text();
+    try {
+      return { ok: res.ok, status: res.status, data: JSON.parse(text) };
+    } catch (e) {
+      throw new Error(`Invalid Response`);
+    }
+  };
+
   const fetchEvents = async () => {
     try {
-      const res = await fetch('/api/admin/settings');
-      if (res.status === 401) { router.push('/admin/login'); return; }
-      const result = await res.json();
+      const response = await fetchWithSafeJSON('/api/admin/settings');
+      const result = response.data;
+      
       if (result.success && Array.isArray(result.data)) {
         setAllEvents(result.data);
         
@@ -174,25 +186,35 @@ export default function AdminDashboard() {
     if (!eventId) return;
     setLoading(true);
     try {
-      const resGuests = await fetch(`/api/admin/guests?eventId=${eventId}`);
-      if (resGuests.status === 401) { router.push('/admin/login'); return; }
-      const resultGuests = await resGuests.json();
-      if (resultGuests.success) setGuests(Array.isArray(resultGuests.guests || resultGuests.data) ? (resultGuests.guests || resultGuests.data) : []);
-      else setGuests([]);
+      const guestsRes = await fetchWithSafeJSON(`/api/admin/guests?eventId=${eventId}`);
+      if (guestsRes.data.success) {
+        setGuests(Array.isArray(guestsRes.data.guests || guestsRes.data.data) ? (guestsRes.data.guests || guestsRes.data.data) : []);
+      } else {
+        setGuests([]);
+      }
 
-      const resTables = await fetch(`/api/admin/tables?eventId=${eventId}`);
-      const resultTables = await resTables.json();
-      if (resultTables.success) setTables(resultTables.data || []);
-    } catch (error) { toast.error("Error loading data"); setGuests([]); } finally { setLoading(false); }
+      const tablesRes = await fetchWithSafeJSON(`/api/admin/tables?eventId=${eventId}`);
+      if (tablesRes.ok && tablesRes.data.success) {
+        setTables(tablesRes.data.data || []);
+      }
+    } catch (error) { 
+      toast.error("Error loading data"); 
+      setGuests([]); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const fetchCrmData = async () => {
     setCrmLoading(true);
     try {
-      const res = await fetch('/api/admin/crm');
-      const result = await res.json();
-      if (result.success) setCrmData(result.data || []);
-    } catch (error) { toast.error("Failed to fetch CRM data"); } finally { setCrmLoading(false); }
+      const response = await fetchWithSafeJSON('/api/admin/crm');
+      if (response.data.success) setCrmData(response.data.data || []);
+    } catch (error) { 
+      toast.error("Failed to fetch CRM data"); 
+    } finally { 
+      setCrmLoading(false); 
+    }
   };
 
   useEffect(() => { fetchEvents(); }, []);
@@ -235,14 +257,12 @@ export default function AdminDashboard() {
   const saveSettings = async () => {
     setSavingSettings(true);
     try {
-      const res = await fetch('/api/admin/settings', {
+      const response = await fetchWithSafeJSON('/api/admin/settings', {
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...settings, eventId: activeEventId }),
       });
-      if (res.ok) toast.success("Platform Settings Updated Successfully!");
-      if (res.status === 401) router.push('/admin/login');
-      // Update local memory to avoid locking if date was extended
+      if (response.ok) toast.success("Platform Settings Updated Successfully!");
       fetchEvents();
     } catch (error) { toast.error("Error saving settings"); } finally { setSavingSettings(false); }
   };
@@ -251,11 +271,10 @@ export default function AdminDashboard() {
     if (!id) return toast.error("Error: Guest ID not found!");
     if (confirm(`Are you sure you want to delete ${name}?`)) {
       try {
-        const res = await fetch('/api/admin/guests/delete', { 
+        const response = await fetchWithSafeJSON('/api/admin/guests/delete', { 
           method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) 
         });
-        if (res.status === 401) router.push('/admin/login');
-        if (res.ok) { toast.success(`${name} removed`); fetchGuestsAndTables(activeEventId); }
+        if (response.ok) { toast.success(`${name} removed`); fetchGuestsAndTables(activeEventId); }
       } catch (error) { toast.error("Network error while deleting"); }
     }
   };
@@ -265,10 +284,10 @@ export default function AdminDashboard() {
     if (confirm(`⚠️ WARNING: Are you sure you want to COMPLETELY wipe ${name} from the database?`)) {
       const toastId = toast.loading("Wiping guest data...");
       try {
-        const res = await fetch('/api/admin/crm/delete', { 
+        const response = await fetchWithSafeJSON('/api/admin/crm/delete', { 
           method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobileNumber: String(mobileNumber) }) 
         });
-        if (res.ok) { toast.success(`${name} deleted.`, { id: toastId }); fetchCrmData(); fetchGuestsAndTables(activeEventId); }
+        if (response.ok) { toast.success(`${name} deleted.`, { id: toastId }); fetchCrmData(); fetchGuestsAndTables(activeEventId); }
       } catch (error) { toast.error("Network error", { id: toastId }); }
     }
   };
@@ -281,11 +300,10 @@ export default function AdminDashboard() {
 
     const toastId = toast.loading("Processing...");
     try {
-      const res = await fetch('/api/admin/blacklist', {
+      const response = await fetchWithSafeJSON('/api/admin/blacklist', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobileNumber, action, reason: "Admin Discretion" })
       });
-      const result = await res.json();
-      if (result.success) { toast.success(result.message, { id: toastId }); fetchCrmData(); }
+      if (response.data.success) { toast.success(response.data.message, { id: toastId }); fetchCrmData(); }
     } catch (err) { toast.error("Network error", { id: toastId }); }
   };
 
@@ -321,7 +339,7 @@ export default function AdminDashboard() {
 
     try {
       await Promise.all(membersToUpdate.map(member => 
-        fetch('/api/admin/guests/edit', { 
+        fetchWithSafeJSON('/api/admin/guests/edit', { 
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, 
           body: JSON.stringify({ ...member, rsvpStatus: newStatus }) 
         })
@@ -357,10 +375,9 @@ export default function AdminDashboard() {
     };
 
     try {
-      const res = await fetch(url, { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const responseData = await res.json().catch(() => ({})); 
+      const response = await fetchWithSafeJSON(url, { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
 
-      if (res.ok) {
+      if (response.ok) {
         if (isEditing) {
            const formGuestId = formData.id || formData._id;
            const groupId = formData.isSubordinate ? formData.hostId : formGuestId;
@@ -372,7 +389,7 @@ export default function AdminDashboard() {
 
            if (linkedMembers.length > 0) {
               await Promise.all(linkedMembers.map(member => 
-                 fetch('/api/admin/guests/edit', {
+                 fetchWithSafeJSON('/api/admin/guests/edit', {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ...member, rsvpStatus: formData.rsvpStatus })
                  })
@@ -384,7 +401,7 @@ export default function AdminDashboard() {
         setIsModalOpen(false); 
         fetchGuestsAndTables(activeEventId);
       } else {
-        toast.error(responseData.error || responseData.message || "Failed to save changes", { id: toastId });
+        toast.error(response.data.error || response.data.message || "Failed to save changes", { id: toastId });
       }
     } catch (err) {
       toast.error("Network Error", { id: toastId });
@@ -401,37 +418,45 @@ export default function AdminDashboard() {
     window.open(`https://wa.me/91${guest.mobileNumber}?text=${encodedMessage}`, '_blank');
   };
 
+  // 🚀 FIXED: Reliable PDF Generator with increased delay for DOM paint
   const downloadVIPPass = (guest: any) => {
     setDownloadingGuest(guest); 
     const toastId = toast.loading("Generating Concert-Style VIP Pass...");
+    
     setTimeout(async () => {
       try {
         const ticketElement = document.getElementById("admin-concert-ticket-export");
         if (!ticketElement) throw new Error("Ticket element not rendered");
-        const eleWidth = ticketElement.scrollWidth; const eleHeight = ticketElement.scrollHeight;
-        const dataUrl = await toPng(ticketElement, { backgroundColor: "#0a0a0a", pixelRatio: 2, cacheBust: true, width: eleWidth, height: eleHeight });
+        
+        const eleWidth = ticketElement.scrollWidth; 
+        const eleHeight = ticketElement.scrollHeight;
+        
+        const dataUrl = await toPng(ticketElement, { 
+           backgroundColor: "#0a0a0a", 
+           pixelRatio: 2, 
+           width: eleWidth, 
+           height: eleHeight 
+        });
+        
         const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [eleWidth, eleHeight] });
         pdf.addImage(dataUrl, "PNG", 0, 0, eleWidth, eleHeight);
         pdf.save(`${guest.firstName}_VIP_Pass.pdf`);
         toast.success("Party Pass Downloaded!", { id: toastId });
-      } catch (error) { toast.error("Failed to generate pass"); } finally { setDownloadingGuest(null); }
-    }, 500); 
+      } catch (error) { 
+        toast.error("Failed to generate pass. Try again.", { id: toastId }); 
+      } finally { 
+        setDownloadingGuest(null); 
+      }
+    }, 1000); // Wait for hidden DOM to securely mount
   };
 
-  // 🚀 FIXED: Robust Scanner Logic to ensure camera triggers and parsing works!
+  // 🚀 FIXED: Strict array handling for Yudiel's Scanner
   const handleScan = (result: any) => {
-    let text = "";
-    if (Array.isArray(result) && result.length > 0) {
-      text = result[0].rawValue;
-    } else if (result && typeof result === 'object' && result.text) {
-      text = result.text;
-    } else if (typeof result === 'string') {
-      text = result;
-    }
-
+    if (!result || !Array.isArray(result) || result.length === 0) return;
+    
+    const text = String(result[0].rawValue).trim();
     if (!text) return;
     
-    text = String(text).trim(); 
     const foundGuest = guests.find((g: any) => String(g.entryCode) === text);
     
     if (foundGuest) setScannedResult(foundGuest); 
@@ -440,8 +465,12 @@ export default function AdminDashboard() {
 
   const markCheckedIn = async (guest: any) => {
     const toastId = toast.loading("Checking in...");
-    const res = await fetch('/api/admin/guests/edit', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...guest, rsvpStatus: 'Checked-In' }) });
-    if (res.ok) { toast.success(`Checked-In successfully!`, { id: toastId }); setScannedResult(null); setIsScannerOpen(false); fetchGuestsAndTables(activeEventId); }
+    try {
+       const response = await fetchWithSafeJSON('/api/admin/guests/edit', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...guest, rsvpStatus: 'Checked-In' }) });
+       if (response.ok) { toast.success(`Checked-In successfully!`, { id: toastId }); setScannedResult(null); setIsScannerOpen(false); fetchGuestsAndTables(activeEventId); }
+    } catch(e) {
+       toast.error("Network Error during Check-in", { id: toastId });
+    }
   };
 
   const openBase64InNewTab = (base64Data: string) => {
@@ -462,6 +491,7 @@ export default function AdminDashboard() {
     let list = Array.isArray(guests) ? [...guests] : [];
     if (view === "Confirmed") list = list.filter((g: any) => g.rsvpStatus === "Confirmed");
     if (view === "Need Verification") list = list.filter((g: any) => g.rsvpStatus === "Need Verification");
+    if (view === "Checked-In") list = list.filter((g: any) => g.rsvpStatus === "Checked-In");
     if (view === "Pending") list = list.filter((g: any) => g.rsvpStatus === "Pending");
     
     if (searchQuery) {
@@ -502,7 +532,7 @@ export default function AdminDashboard() {
     return crmData.filter((c: any) => `${c.firstName || ""} ${c.lastName || ""}`.toLowerCase().includes(query) || String(c.mobileNumber || "").toLowerCase().includes(query)).slice(0, 5); 
   }, [crmData, crmAddSearchQuery]);
 
-  const revenueReceived = guests.filter((g: any) => g.rsvpStatus === "Confirmed" || g.rsvpStatus === "Checked-In").reduce((sum, g) => {
+  const revenueReceived = guests.filter((g: any) => ["Confirmed", "Checked-In", "Not Attended"].includes(g.rsvpStatus)).reduce((sum, g) => {
     if (g.isSubordinate) return sum; 
     const guestTable = tables.find((t: any) => t.id === g.tableId);
     const amt = (g.isCaptain && guestTable) ? Number(guestTable.minSpend) : Number(g.amount || 0);
@@ -511,8 +541,18 @@ export default function AdminDashboard() {
 
   const stats = [
     { label: "Total Guests", value: guests.length, target: "Overview", icon: Users, color: "text-blue-400", bg: "bg-blue-500/20" },
-    { label: "Confirmed", value: guests.filter((g: any) => g.rsvpStatus === "Confirmed").length, target: "Confirmed", icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/20" },
-    { label: "Need Verification", value: guests.filter((g: any) => g.rsvpStatus === "Need Verification").length, target: "Need Verification", icon: AlertCircle, color: "text-amber-400", bg: "bg-amber-500/20" },
+    { 
+      label: !isCurrentEventActive ? "All Guests" : "Confirmed", 
+      value: !isCurrentEventActive ? guests.length : guests.filter((g: any) => g.rsvpStatus === "Confirmed").length, 
+      target: !isCurrentEventActive ? "Overview" : "Confirmed", 
+      icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/20" 
+    },
+    { 
+      label: !isCurrentEventActive ? "Checked-In" : "Need Verification", 
+      value: guests.filter((g: any) => g.rsvpStatus === (!isCurrentEventActive ? "Checked-In" : "Need Verification")).length, 
+      target: !isCurrentEventActive ? "Checked-In" : "Need Verification", 
+      icon: AlertCircle, color: "text-amber-400", bg: "bg-amber-500/20" 
+    },
   ];
 
   return (
@@ -522,10 +562,9 @@ export default function AdminDashboard() {
 
       <div className="max-w-[1400px] mx-auto space-y-6 sm:space-y-8">
         
-        {/* 🚀 RESPONSIVE HEADER - NO SCROLL, FLEX WRAP ENABLED */}
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 no-print bg-white/[0.02] border border-white/5 p-4 sm:p-6 rounded-[2rem] shadow-2xl backdrop-blur-md">
+        <div className="flex flex-col gap-5 no-print bg-white/[0.02] border border-white/5 p-4 sm:p-6 rounded-[2rem] shadow-2xl backdrop-blur-md">
           
-          <div className="flex flex-col gap-4 w-full xl:w-auto">
+          <div className="flex flex-col gap-2">
             <div className="flex items-center gap-3">
               {view !== "Overview" && (
                 <button onClick={() => setView("Overview")} className="p-2 hover:bg-white/10 rounded-full transition-colors bg-white/5 border border-white/10">
@@ -538,8 +577,8 @@ export default function AdminDashboard() {
             </div>
 
             {view !== "CRM" && (
-              <div className="bg-black/50 border border-white/10 rounded-xl pl-4 pr-3 py-2 flex items-center gap-3 w-full sm:max-w-md shadow-inner">
-                <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <div className="bg-black/50 border border-white/10 rounded-xl pl-3 pr-2 py-1.5 flex items-center gap-2 shadow-inner w-fit min-w-[200px] mt-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
                 <select 
                   value={activeEventId} 
                   onChange={(e) => {
@@ -548,11 +587,28 @@ export default function AdminDashboard() {
                   }} 
                   className="bg-transparent text-sm outline-none cursor-pointer font-medium text-neutral-300 focus:text-white w-full appearance-none"
                 >
-                  {activeEvents.length === 0 && <option value="">No Active Events</option>}
-                  {activeEvents.length > 0 && (
-                    <optgroup label="🟢 Active & Upcoming" className="text-green-500 bg-neutral-900 font-bold">
-                      {activeEvents.map((e) => <option key={e.eventId} value={e.eventId} className="text-white font-medium">{e.mainTitle} ({e.eventId})</option>)}
-                    </optgroup>
+                  {!isCurrentEventActive ? (
+                    <>
+                      <optgroup label="🔒 Viewing Past Event" className="text-red-400 bg-neutral-900 font-bold">
+                         <option value={activeEventId} className="text-white font-medium">
+                           {completedEvents.find((e: any) => e.eventId === activeEventId)?.mainTitle} ({activeEventId})
+                         </option>
+                      </optgroup>
+                      {activeEvents.length > 0 && (
+                        <optgroup label="🟢 Active & Upcoming" className="text-green-500 bg-neutral-900 font-bold">
+                          {activeEvents.map((e) => <option key={e.eventId} value={e.eventId} className="text-white font-medium">{e.mainTitle} ({e.eventId})</option>)}
+                        </optgroup>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {activeEvents.length === 0 && <option value="">No Active Events</option>}
+                      {activeEvents.length > 0 && (
+                        <optgroup label="🟢 Active & Upcoming" className="text-green-500 bg-neutral-900 font-bold">
+                          {activeEvents.map((e) => <option key={e.eventId} value={e.eventId} className="text-white font-medium">{e.mainTitle} ({e.eventId})</option>)}
+                        </optgroup>
+                      )}
+                    </>
                   )}
                 </select>
                 <ChevronDown className="w-4 h-4 text-neutral-500 pointer-events-none" />
@@ -560,31 +616,30 @@ export default function AdminDashboard() {
             )}
           </div>
           
-          {/* 🚀 THE FIX: Action Buttons Wrapper - Wrap enabled so it neatly stacks on smaller screens */}
-          <div className="flex flex-wrap items-center justify-start xl:justify-end gap-3 w-full xl:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 w-full">
             {view !== "Settings" && (
-              <div className="relative w-full sm:w-auto min-w-[200px] flex-grow sm:flex-grow-0">
+              <div className="relative flex-grow sm:flex-grow-0 min-w-[200px] max-w-xs">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-                <input type="text" placeholder={view === "CRM" ? "Search CRM..." : "Search Guests..."} className="bg-black/50 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-amber-500/50 w-full transition-colors" onChange={(e) => view === "CRM" ? setCrmSearchQuery(e.target.value) : setSearchQuery(e.target.value)} />
+                <input type="text" placeholder={view === "CRM" ? "Search CRM..." : "Search Guests..."} className="bg-black/50 border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-amber-500/50 w-full transition-colors" onChange={(e) => view === "CRM" ? setCrmSearchQuery(e.target.value) : setSearchQuery(e.target.value)} />
               </div>
             )}
             
             {view !== "Overview" && view !== "Settings" && view !== "CRM" && (
-              <button onClick={() => window.print()} className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 text-purple-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-purple-500/20 no-print flex-grow sm:flex-grow-0 justify-center transition-all"><Printer className="w-4 h-4" /> Export</button>
+              <button onClick={() => window.print()} className="flex items-center gap-1.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-purple-500/20 no-print transition-all"><Printer className="w-4 h-4" /> Export</button>
             )}
 
-            {view !== "CRM" && <button onClick={() => router.push("/admin/manage-events")} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-amber-500/20 transition-all flex-grow sm:flex-grow-0 justify-center"><LayoutDashboard className="w-4 h-4" /> Manage Events</button>}
-            {view !== "CRM" && <button onClick={() => setView("CRM")} className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-500/20 transition-all flex-grow sm:flex-grow-0 justify-center"><Database className="w-4 h-4" /> CRM</button>}
-            {view !== "CRM" && isCurrentEventActive && <button onClick={() => setIsScannerOpen(true)} className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-green-500/20 transition-all flex-grow sm:flex-grow-0 justify-center shadow-[0_0_15px_rgba(34,197,94,0.1)]"><ScanLine className="w-4 h-4" /> Scan</button>}
-            {view !== "CRM" && <button onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)} className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-400 transition-all flex-grow sm:flex-grow-0 justify-center shadow-[0_0_15px_rgba(245,158,11,0.2)]">Tables</button>}
+            {view !== "CRM" && <button onClick={() => router.push("/admin/manage-events")} className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-amber-500/20 transition-all"><LayoutDashboard className="w-4 h-4" /> Manage Events</button>}
+            {view !== "CRM" && <button onClick={() => setView("CRM")} className="flex items-center gap-1.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-500/20 transition-all"><Database className="w-4 h-4" /> CRM</button>}
+            {view !== "CRM" && isCurrentEventActive && <button onClick={() => setIsScannerOpen(true)} className="flex items-center gap-1.5 bg-green-500/10 border border-green-500/20 text-green-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-green-500/20 transition-all shadow-[0_0_15px_rgba(34,197,94,0.1)]"><ScanLine className="w-4 h-4" /> Scan</button>}
+            {view !== "CRM" && <button onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)} className="flex items-center gap-1.5 bg-amber-500 text-black px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-400 transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)]">Tables</button>}
             
-            <div className="h-8 w-px bg-white/10 mx-1 hidden md:block"></div>
+            <div className="h-6 w-px bg-white/10 mx-1 hidden sm:block"></div>
 
             {view !== "CRM" && <button onClick={() => setView("Settings")} className="p-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors" title="Settings"><Settings className="w-4 h-4 text-neutral-400" /></button>}
             <button onClick={handleLogout} className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl hover:bg-red-500/20 text-red-400 transition-all" title="Logout"><LogOut className="w-4 h-4" /></button>
 
             {view !== "CRM" && isCurrentEventActive && (
-              <button onClick={() => { setIsEditing(false); setIsSearchCrmMode(false); setCrmAddSearchQuery(""); setFormData({ _id: "", id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending", eventId: activeEventId, entryType: "Stag", partnerFirstName: "", partnerLastName: "", partnerMobile: "", isSubordinate: false, hostId: "" }); setIsModalOpen(true); }} className="flex items-center gap-2 w-full sm:w-auto bg-white text-black px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-gray-200 justify-center mt-2 sm:mt-0 transition-all"><Plus className="w-4 h-4" /> Add Guest</button>
+              <button onClick={() => { setIsEditing(false); setIsSearchCrmMode(false); setCrmAddSearchQuery(""); setFormData({ _id: "", id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending", eventId: activeEventId, entryType: "Stag", partnerFirstName: "", partnerLastName: "", partnerMobile: "", isSubordinate: false, hostId: "" }); setIsModalOpen(true); }} className="flex items-center gap-1.5 w-full sm:w-auto bg-white text-black px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-gray-200 justify-center mt-2 sm:mt-0 transition-all ml-auto"><Plus className="w-4 h-4" /> Add Guest</button>
             )}
           </div>
         </div>
@@ -599,7 +654,7 @@ export default function AdminDashboard() {
           </motion.div>
         )}
 
-        {/* 🚀 RESPONSIVE SETTINGS VIEW */}
+        {/* 🚀 SETTINGS VIEW */}
         {view === "Settings" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print animate-in fade-in duration-500">
             
@@ -701,7 +756,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 🚀 RESPONSIVE STATS GRID */}
+        {/* 🚀 STATS GRID */}
         {view === "Overview" && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 no-print animate-in fade-in duration-500">
             {stats.map((stat: any, i: number) => (
@@ -726,7 +781,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 🚀 RESPONSIVE GLOBAL CRM */}
+        {/* 🚀 GLOBAL CRM */}
         {view === "CRM" && (
           <GlassCard className="p-0 overflow-hidden table-container border-white/5 bg-white/[0.01] rounded-2xl animate-in fade-in duration-700 shadow-2xl">
             <div className="p-5 sm:p-6 border-b border-white/5 font-medium no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-indigo-500/5">
@@ -799,7 +854,7 @@ export default function AdminDashboard() {
           </GlassCard>
         )}
         
-        {/* 🚀 RESPONSIVE GUEST LIST TABLE */}
+        {/* 🚀 GUEST LIST TABLE */}
         {view !== "Settings" && view !== "CRM" && (
           <GlassCard className="p-0 overflow-hidden table-container border-white/5 bg-white/[0.01] rounded-2xl animate-in fade-in duration-700 shadow-2xl">
             <div className="p-5 sm:p-6 border-b border-white/5 font-medium no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/[0.02]">
@@ -882,6 +937,7 @@ export default function AdminDashboard() {
       </div>
 
       <AnimatePresence>
+        {/* 🚀 FIXED: Scanner Component - Clean and Robust */}
         {isScannerOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md no-print">
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="z-10 w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-3xl overflow-hidden relative shadow-2xl">
@@ -890,12 +946,9 @@ export default function AdminDashboard() {
                 <div className="p-6">
                   <h2 className="text-xl text-center text-white font-bold tracking-wide mb-6">Scan Entry Pass</h2>
                   
-                  {/* 🚀 FIXED: Added components config to fix audio block & format parser */}
-                  <div className="rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(251,191,36,0.15)] relative bg-black aspect-square flex items-center justify-center">
+                  <div className="rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(251,191,36,0.15)] relative bg-black aspect-square flex items-center justify-center w-full min-h-[300px]">
                     <Scanner 
-                      onScan={handleScan} 
-                      components={{ audio: false }}
-                      allowMultiple={false}
+                      onScan={(result) => handleScan(result)} 
                     />
                   </div>
                   
@@ -1100,27 +1153,26 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      <div className="fixed -top-[9999px] -left-[9999px] no-print">
-        {downloadingGuest && (
-          <div id="admin-concert-ticket-export" className="flex w-[800px] h-[300px] bg-neutral-950 text-white font-sans overflow-hidden border border-amber-500/30 rounded-xl relative shadow-2xl">
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-black to-black opacity-80"></div>
-            <div className="w-[580px] p-8 flex flex-col justify-between relative z-10 border-r-2 border-dashed border-neutral-700">
-               <div><h3 className="text-amber-500 tracking-[0.3em] uppercase text-xs font-bold mb-2">VIP ADMISSION</h3><h1 className="text-4xl font-black uppercase tracking-wider text-white drop-shadow-md">{settings.mainTitle || "THE INFINITY EVENT"}</h1><p className="text-neutral-400 mt-1 text-lg italic font-serif">{settings.mainHeadline || "Exclusive Access Only"}</p></div>
-               <div><p className="text-neutral-500 text-xs uppercase tracking-widest mb-1">Admit One</p><h2 className="text-3xl font-bold uppercase tracking-wide text-white">{downloadingGuest.firstName} {downloadingGuest.lastName}</h2></div>
-               <div className="flex gap-10 border-t border-neutral-800 pt-5 mt-2">
-                  <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Date</p><p className="font-bold text-white tracking-wide">{settings.eventDate || "TBA"}</p></div>
-                  <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Time</p><p className="font-bold text-white tracking-wide">{settings.eventTime || "TBA"}</p></div>
-                  {downloadingGuest.tableId && <div><p className="text-amber-500 text-xs uppercase tracking-wider mb-1">VIP Table</p><p className="font-bold text-amber-400 tracking-wide">{tables.find((t: any) => t.id === downloadingGuest.tableId)?.tableName || "Reserved"}</p></div>}
-               </div>
-            </div>
-            <div className="w-[220px] bg-amber-500/5 p-6 flex flex-col items-center justify-center relative z-10">
-               <p className="text-amber-500 text-sm font-bold tracking-[0.2em] mb-4 text-center">SCAN AT GATE</p>
-               <div className="bg-white p-2 rounded-xl mb-4 shadow-[0_0_15px_rgba(251,191,36,0.2)]"><QRCodeSVG value={downloadingGuest.entryCode || "N/A"} size={100} bgColor={"#ffffff"} fgColor={"#000000"} level={"H"} /></div>
-               <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1 text-center">Entry Code</p>
-               <p className="text-xl font-mono font-bold text-white tracking-[0.1em] text-center">{downloadingGuest.entryCode || "N/A"}</p>
-            </div>
+      {/* 🚀 FIXED: Reliable PDF Pass Element */}
+      <div className="fixed -top-[9999px] -left-[9999px] no-print opacity-0 pointer-events-none">
+        <div id="admin-concert-ticket-export" className="flex w-[800px] h-[300px] bg-neutral-950 text-white font-sans overflow-hidden border border-amber-500/30 rounded-xl shadow-2xl relative">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-black to-black opacity-80"></div>
+          <div className="w-[580px] p-8 flex flex-col justify-between relative z-10 border-r-2 border-dashed border-neutral-700">
+             <div><h3 className="text-amber-500 tracking-[0.3em] uppercase text-xs font-bold mb-2">VIP ADMISSION</h3><h1 className="text-4xl font-black uppercase tracking-wider text-white drop-shadow-md">{settings.mainTitle || "THE INFINITY EVENT"}</h1><p className="text-neutral-400 mt-1 text-lg italic font-serif">{settings.mainHeadline || "Exclusive Access Only"}</p></div>
+             <div><p className="text-neutral-500 text-xs uppercase tracking-widest mb-1">Admit One</p><h2 className="text-3xl font-bold uppercase tracking-wide text-white">{(downloadingGuest?.firstName || "Guest")} {(downloadingGuest?.lastName || "")}</h2></div>
+             <div className="flex gap-10 border-t border-neutral-800 pt-5 mt-2">
+                <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Date</p><p className="font-bold text-white tracking-wide">{settings.eventDate || "TBA"}</p></div>
+                <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Time</p><p className="font-bold text-white tracking-wide">{settings.eventTime || "TBA"}</p></div>
+                {downloadingGuest?.tableId && <div><p className="text-amber-500 text-xs uppercase tracking-wider mb-1">VIP Table</p><p className="font-bold text-amber-400 tracking-wide">{tables.find((t: any) => t.id === downloadingGuest?.tableId)?.tableName || "Reserved"}</p></div>}
+             </div>
           </div>
-        )}
+          <div className="w-[220px] bg-amber-500/5 p-6 flex flex-col items-center justify-center relative z-10">
+             <p className="text-amber-500 text-sm font-bold tracking-[0.2em] mb-4 text-center">SCAN AT GATE</p>
+             <div className="bg-white p-2 rounded-xl mb-4 shadow-[0_0_15px_rgba(251,191,36,0.2)]"><QRCodeSVG value={downloadingGuest?.entryCode || "000000"} size={100} bgColor={"#ffffff"} fgColor={"#000000"} level={"H"} /></div>
+             <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1 text-center">Entry Code</p>
+             <p className="text-xl font-mono font-bold text-white tracking-[0.1em] text-center">{downloadingGuest?.entryCode || "N/A"}</p>
+          </div>
+        </div>
       </div>
     </main>
   );
