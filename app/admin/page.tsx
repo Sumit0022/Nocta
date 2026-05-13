@@ -63,20 +63,48 @@ export default function AdminDashboard() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedResult, setScannedResult] = useState<any>(null);
 
-  // 🚀 FIXED DATE LOGIC: Force strict local parsing to prevent timezone jumps
+  // 🚀 FIXED: BULLETPROOF 18-HOUR FREEZE ENGINE
   const getEventStatus = (dateStr: string, timeStr: string) => {
-    if (!dateStr || !timeStr) return "Active"; 
+    if (!dateStr) return "Active"; 
     
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    
-    // Create Date explicitly avoiding UTC 'Z' or ISO string bugs
-    const eventDateTime = new Date(year, month - 1, day, hours, minutes);
-    
-    if (isNaN(eventDateTime.getTime())) return "Active"; 
-    
-    const lockTime = new Date(eventDateTime.getTime() + 18 * 60 * 60 * 1000);
-    return new Date() > lockTime ? "Completed" : "Active";
+    try {
+      const parts = dateStr.split(/[-/]/);
+      let year = new Date().getFullYear(), month = 1, day = 1;
+      
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          year = Number(parts[0]);
+          month = Number(parts[1]);
+          day = Number(parts[2]);
+        } else {
+          day = Number(parts[0]);
+          month = Number(parts[1]);
+          year = Number(parts[2]);
+          if (year < 100) year += 2000; 
+        }
+      }
+
+      let hours = 0, minutes = 0;
+      if (timeStr) {
+        if (timeStr.includes(':')) {
+           const timeParts = timeStr.split(':');
+           hours = Number(timeParts[0]);
+           minutes = Number(timeParts[1]);
+        } else {
+           hours = Number(timeStr);
+        }
+      }
+      
+      const eventDateTime = new Date(year, month - 1, day, hours, minutes);
+      
+      if (isNaN(eventDateTime.getTime())) return "Active"; 
+      
+      // Calculate exactly 18 hours after event commencement
+      const lockTime = new Date(eventDateTime.getTime() + 18 * 60 * 60 * 1000);
+      return new Date() > lockTime ? "Completed" : "Active";
+    } catch (e) {
+      return "Active"; 
+    }
   };
 
   const { activeEvents, completedEvents } = useMemo(() => {
@@ -92,7 +120,11 @@ export default function AdminDashboard() {
     return { activeEvents: active, completedEvents: completed };
   }, [allEvents]);
 
-  const isCurrentEventActive = settings.eventDate ? getEventStatus(settings.eventDate, settings.eventTime) === "Active" : true;
+  // 🚀 THE MASTER FIX: Only use the database SAVED date to lock the event, NEVER the live typing state.
+  const currentSavedEvent = useMemo(() => allEvents.find((e: any) => e.eventId === activeEventId), [allEvents, activeEventId]);
+  const isCurrentEventActive = currentSavedEvent 
+    ? getEventStatus(currentSavedEvent.eventDate, currentSavedEvent.eventTime) === "Active" 
+    : true;
 
   const fetchEvents = async () => {
     try {
@@ -210,6 +242,8 @@ export default function AdminDashboard() {
       });
       if (res.ok) toast.success("Platform Settings Updated Successfully!");
       if (res.status === 401) router.push('/admin/login');
+      // Update local memory to avoid locking if date was extended
+      fetchEvents();
     } catch (error) { toast.error("Error saving settings"); } finally { setSavingSettings(false); }
   };
 
@@ -384,11 +418,24 @@ export default function AdminDashboard() {
     }, 500); 
   };
 
+  // 🚀 FIXED: Robust Scanner Logic to ensure camera triggers and parsing works!
   const handleScan = (result: any) => {
-    const text = Array.isArray(result) ? result[0].rawValue : result;
+    let text = "";
+    if (Array.isArray(result) && result.length > 0) {
+      text = result[0].rawValue;
+    } else if (result && typeof result === 'object' && result.text) {
+      text = result.text;
+    } else if (typeof result === 'string') {
+      text = result;
+    }
+
     if (!text) return;
-    const foundGuest = guests.find((g: any) => g.entryCode === text);
-    if (foundGuest) setScannedResult(foundGuest); else setScannedResult({ error: true, code: text });
+    
+    text = String(text).trim(); 
+    const foundGuest = guests.find((g: any) => String(g.entryCode) === text);
+    
+    if (foundGuest) setScannedResult(foundGuest); 
+    else setScannedResult({ error: true, code: text });
   };
 
   const markCheckedIn = async (guest: any) => {
@@ -469,135 +516,143 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <main className="min-h-screen w-full p-4 sm:p-6 md:p-10 relative text-white overflow-x-hidden">
+    <main className="min-h-screen w-full bg-[#050505] p-3 sm:p-6 md:p-10 relative text-white overflow-x-hidden font-sans">
       <style dangerouslySetInnerHTML={{__html: ` @media print { body { background: white !important; color: black !important; padding: 0 !important; } .no-print { display: none !important; } .table-container { border: 1px solid #ccc !important; box-shadow: none !important; } th, td { color: black !important; border-bottom: 1px solid #eee !important; padding: 12px !important; } .print-badge { border: none !important; background: none !important; font-weight: bold !important; } } `}} />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-800/40 via-neutral-950 to-neutral-950 -z-10 fixed no-print" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-800/20 via-black to-black -z-10 fixed no-print" />
 
-      <div className="max-w-6xl mx-auto space-y-8">
+      <div className="max-w-[1400px] mx-auto space-y-6 sm:space-y-8">
         
-        {/* --- HEADER --- */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 no-print">
+        {/* 🚀 RESPONSIVE HEADER - NO SCROLL, FLEX WRAP ENABLED */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 no-print bg-white/[0.02] border border-white/5 p-4 sm:p-6 rounded-[2rem] shadow-2xl backdrop-blur-md">
           
-          <div className="flex flex-col gap-3 w-full md:w-auto">
-            <div className="flex items-center gap-4">
-              {view !== "Overview" && <button onClick={() => setView("Overview")} className="p-2 hover:bg-white/10 rounded-full transition-colors"><ArrowLeft className="w-6 h-6" /></button>}
-              <h1 className="text-2xl sm:text-3xl font-light tracking-wide">{view === "Overview" ? "Command Center" : view === "Settings" ? "Platform Settings" : view === "CRM" ? "Master Guest Database" : `${view} List`}</h1>
+          <div className="flex flex-col gap-4 w-full xl:w-auto">
+            <div className="flex items-center gap-3">
+              {view !== "Overview" && (
+                <button onClick={() => setView("Overview")} className="p-2 hover:bg-white/10 rounded-full transition-colors bg-white/5 border border-white/10">
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+              )}
+              <h1 className="text-xl sm:text-2xl font-bold tracking-wide flex items-center gap-2">
+                {view === "Overview" ? "Dashboard" : view === "Settings" ? "Platform Settings" : view === "CRM" ? "Master Database" : `${view} List`}
+              </h1>
             </div>
 
             {view !== "CRM" && (
-              <div className="flex flex-wrap items-center gap-3 mt-1">
-                <div className="bg-white/5 border border-white/10 rounded-full pl-4 pr-3 py-1.5 flex items-center gap-3 w-full sm:w-auto">
-                  <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                  <select 
-                    value={activeEventId} 
-                    onChange={(e) => {
-                      setActiveEventId(e.target.value);
-                      localStorage.setItem("adminActiveEventId", e.target.value); 
-                    }} 
-                    className="bg-transparent text-sm outline-none cursor-pointer font-medium text-neutral-300 focus:text-white w-full"
-                  >
-                    {activeEvents.length === 0 && <option value="">No Active Events</option>}
-                    {activeEvents.length > 0 && (
-                      <optgroup label="🟢 Active & Upcoming" className="text-green-500 bg-neutral-900 font-bold">
-                        {activeEvents.map((e) => <option key={e.eventId} value={e.eventId} className="text-white font-medium">{e.mainTitle} ({e.eventId})</option>)}
-                      </optgroup>
-                    )}
-                  </select>
-                </div>
+              <div className="bg-black/50 border border-white/10 rounded-xl pl-4 pr-3 py-2 flex items-center gap-3 w-full sm:max-w-md shadow-inner">
+                <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <select 
+                  value={activeEventId} 
+                  onChange={(e) => {
+                    setActiveEventId(e.target.value);
+                    localStorage.setItem("adminActiveEventId", e.target.value); 
+                  }} 
+                  className="bg-transparent text-sm outline-none cursor-pointer font-medium text-neutral-300 focus:text-white w-full appearance-none"
+                >
+                  {activeEvents.length === 0 && <option value="">No Active Events</option>}
+                  {activeEvents.length > 0 && (
+                    <optgroup label="🟢 Active & Upcoming" className="text-green-500 bg-neutral-900 font-bold">
+                      {activeEvents.map((e) => <option key={e.eventId} value={e.eventId} className="text-white font-medium">{e.mainTitle} ({e.eventId})</option>)}
+                    </optgroup>
+                  )}
+                </select>
+                <ChevronDown className="w-4 h-4 text-neutral-500 pointer-events-none" />
               </div>
             )}
           </div>
           
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
+          {/* 🚀 THE FIX: Action Buttons Wrapper - Wrap enabled so it neatly stacks on smaller screens */}
+          <div className="flex flex-wrap items-center justify-start xl:justify-end gap-3 w-full xl:w-auto">
             {view !== "Settings" && (
-              <div className="relative w-full sm:w-auto flex-grow sm:flex-grow-0 mb-2 sm:mb-0">
+              <div className="relative w-full sm:w-auto min-w-[200px] flex-grow sm:flex-grow-0">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-                <input type="text" placeholder={view === "CRM" ? "Search by name or number..." : "Search..."} className="bg-white/5 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm outline-none focus:border-white/30 w-full sm:w-48 md:w-64" onChange={(e) => view === "CRM" ? setCrmSearchQuery(e.target.value) : setSearchQuery(e.target.value)} />
+                <input type="text" placeholder={view === "CRM" ? "Search CRM..." : "Search Guests..."} className="bg-black/50 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-amber-500/50 w-full transition-colors" onChange={(e) => view === "CRM" ? setCrmSearchQuery(e.target.value) : setSearchQuery(e.target.value)} />
               </div>
             )}
             
             {view !== "Overview" && view !== "Settings" && view !== "CRM" && (
-              <button onClick={() => window.print()} className="flex items-center gap-2 bg-purple-500/20 text-purple-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-500/30 no-print flex-grow sm:flex-grow-0 justify-center"><Printer className="w-4 h-4" /> Export</button>
+              <button onClick={() => window.print()} className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 text-purple-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-purple-500/20 no-print flex-grow sm:flex-grow-0 justify-center transition-all"><Printer className="w-4 h-4" /> Export</button>
             )}
 
-            {view !== "CRM" && <button onClick={() => router.push("/admin/manage-events")} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-500/20 transition-all flex-grow sm:flex-grow-0 justify-center"><LayoutDashboard className="w-4 h-4" /> Manage Events</button>}
-            {view !== "CRM" && <button onClick={() => setView("CRM")} className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-500/20 transition-all flex-grow sm:flex-grow-0 justify-center"><Database className="w-4 h-4" /> Global CRM</button>}
-            {view !== "CRM" && isCurrentEventActive && <button onClick={() => setIsScannerOpen(true)} className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.15)] transition-all flex-grow sm:flex-grow-0 justify-center"><ScanLine className="w-4 h-4" /> Scan Pass</button>}
-            {view !== "CRM" && <button onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)} className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 transition-all shadow-[0_0_15px_rgba(251,191,36,0.2)] flex-grow sm:flex-grow-0 justify-center">Manage Tables</button>}
-            {view !== "CRM" && <button onClick={() => setView("Settings")} className="p-2 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors" title="Settings"><Settings className="w-5 h-5 text-neutral-400" /></button>}
-            <button onClick={handleLogout} className="p-2 bg-red-500/10 border border-red-500/20 rounded-lg hover:bg-red-500/20 text-red-400 transition-all flex items-center justify-center" title="Logout Session"><LogOut className="w-5 h-5" /></button>
+            {view !== "CRM" && <button onClick={() => router.push("/admin/manage-events")} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-amber-500/20 transition-all flex-grow sm:flex-grow-0 justify-center"><LayoutDashboard className="w-4 h-4" /> Manage Events</button>}
+            {view !== "CRM" && <button onClick={() => setView("CRM")} className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-500/20 transition-all flex-grow sm:flex-grow-0 justify-center"><Database className="w-4 h-4" /> CRM</button>}
+            {view !== "CRM" && isCurrentEventActive && <button onClick={() => setIsScannerOpen(true)} className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-green-500/20 transition-all flex-grow sm:flex-grow-0 justify-center shadow-[0_0_15px_rgba(34,197,94,0.1)]"><ScanLine className="w-4 h-4" /> Scan</button>}
+            {view !== "CRM" && <button onClick={() => router.push(`/admin/tables?eventId=${activeEventId}`)} className="flex items-center gap-2 bg-amber-500 text-black px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-400 transition-all flex-grow sm:flex-grow-0 justify-center shadow-[0_0_15px_rgba(245,158,11,0.2)]">Tables</button>}
+            
+            <div className="h-8 w-px bg-white/10 mx-1 hidden md:block"></div>
+
+            {view !== "CRM" && <button onClick={() => setView("Settings")} className="p-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors" title="Settings"><Settings className="w-4 h-4 text-neutral-400" /></button>}
+            <button onClick={handleLogout} className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl hover:bg-red-500/20 text-red-400 transition-all" title="Logout"><LogOut className="w-4 h-4" /></button>
 
             {view !== "CRM" && isCurrentEventActive && (
-              <button onClick={() => { setIsEditing(false); setIsSearchCrmMode(false); setCrmAddSearchQuery(""); setFormData({ _id: "", id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending", eventId: activeEventId, entryType: "Stag", partnerFirstName: "", partnerLastName: "", partnerMobile: "", isSubordinate: false, hostId: "" }); setIsModalOpen(true); }} className="flex items-center gap-2 bg-white text-neutral-950 px-4 py-2 rounded-lg text-sm font-medium hover:bg-neutral-200 flex-grow sm:flex-grow-0 justify-center"><Plus className="w-4 h-4" /> Add Guest</button>
+              <button onClick={() => { setIsEditing(false); setIsSearchCrmMode(false); setCrmAddSearchQuery(""); setFormData({ _id: "", id: "", firstName: "", lastName: "", mobileNumber: "", amount: 0, rsvpStatus: "Pending", eventId: activeEventId, entryType: "Stag", partnerFirstName: "", partnerLastName: "", partnerMobile: "", isSubordinate: false, hostId: "" }); setIsModalOpen(true); }} className="flex items-center gap-2 w-full sm:w-auto bg-white text-black px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-gray-200 justify-center mt-2 sm:mt-0 transition-all"><Plus className="w-4 h-4" /> Add Guest</button>
             )}
           </div>
         </div>
 
         {view !== "CRM" && !isCurrentEventActive && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-4 no-print shadow-[0_0_20px_rgba(239,68,68,0.1)]">
-             <div className="bg-red-500/20 p-2 rounded-full flex-shrink-0 mt-0.5"><Lock className="w-5 h-5 text-red-400" /></div>
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 sm:p-5 flex items-start gap-4 no-print shadow-lg">
+             <div className="bg-red-500/20 p-2.5 rounded-full flex-shrink-0"><Lock className="w-5 h-5 text-red-400" /></div>
              <div>
-                <h3 className="text-red-400 font-bold text-lg tracking-wide uppercase">Event Completed & Locked</h3>
-                <p className="text-neutral-400 text-sm mt-1 leading-relaxed">This event commenced over 18 hours ago and is now permanently locked to protect historical data. You cannot add new guests, scan passes, or edit details. You can only view and export the data.</p>
+                <h3 className="text-red-400 font-bold text-sm sm:text-base uppercase tracking-wider">Event Locked</h3>
+                <p className="text-neutral-400 text-xs sm:text-sm mt-1 leading-relaxed">This event commenced over 18 hours ago and is now permanently locked. You can only view and export the data.</p>
              </div>
           </motion.div>
         )}
 
-        {/* --- SETTINGS VIEW --- */}
+        {/* 🚀 RESPONSIVE SETTINGS VIEW */}
         {view === "Settings" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 no-print animate-in fade-in duration-500">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print animate-in fade-in duration-500">
             
-            <GlassCard className="p-6 sm:p-8 border-white/10 h-fit">
-              <div className="flex items-center gap-3 mb-6 text-amber-400">
+            <GlassCard className="p-6 sm:p-8 border-white/10 rounded-[2rem] bg-white/[0.02]">
+              <div className="flex items-center gap-3 mb-6 text-amber-400 border-b border-white/5 pb-4">
                 <Sparkles className="w-5 h-5" />
-                <h2 className="text-xl font-medium text-white">Event Content</h2>
+                <h2 className="text-xl font-bold text-white tracking-wide">Event Content</h2>
               </div>
-              <div className="space-y-4 text-white">
-                <div><label className="text-xs text-neutral-500 uppercase">Title</label><input disabled={!isCurrentEventActive} value={settings.mainTitle} onChange={(e) => setSettings({...settings, mainTitle: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" /></div>
-                <div><label className="text-xs text-neutral-500 uppercase">Headline</label><input disabled={!isCurrentEventActive} value={settings.mainHeadline} onChange={(e) => setSettings({...settings, mainHeadline: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" /></div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div><label className="text-xs text-neutral-500 uppercase">Date</label><input disabled={!isCurrentEventActive} value={settings.eventDate} onChange={(e) => setSettings({...settings, eventDate: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" /></div>
-                  <div><label className="text-xs text-neutral-500 uppercase">Time</label><input disabled={!isCurrentEventActive} value={settings.eventTime} onChange={(e) => setSettings({...settings, eventTime: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" /></div>
+              <div className="space-y-5 text-white">
+                <div><label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">Title</label><input disabled={!isCurrentEventActive} value={settings.mainTitle} onChange={(e) => setSettings({...settings, mainTitle: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 outline-none focus:border-amber-500/50 disabled:opacity-50 transition-colors" /></div>
+                <div><label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">Headline</label><input disabled={!isCurrentEventActive} value={settings.mainHeadline} onChange={(e) => setSettings({...settings, mainHeadline: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 outline-none focus:border-amber-500/50 disabled:opacity-50 transition-colors" /></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div><label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">Date</label><input disabled={!isCurrentEventActive} value={settings.eventDate} onChange={(e) => setSettings({...settings, eventDate: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 outline-none focus:border-amber-500/50 disabled:opacity-50 transition-colors" /></div>
+                  <div><label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">Time</label><input disabled={!isCurrentEventActive} value={settings.eventTime} onChange={(e) => setSettings({...settings, eventTime: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 outline-none focus:border-amber-500/50 disabled:opacity-50 transition-colors" /></div>
                 </div>
-                <div><label className="text-xs text-neutral-500 uppercase">Venue</label><input disabled={!isCurrentEventActive} value={settings.eventVenue} onChange={(e) => setSettings({...settings, eventVenue: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" /></div>
-                <div><label className="text-xs text-neutral-500 uppercase">Vibe</label><input disabled={!isCurrentEventActive} value={settings.eventVibe} onChange={(e) => setSettings({...settings, eventVibe: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" /></div>
+                <div><label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">Venue</label><input disabled={!isCurrentEventActive} value={settings.eventVenue} onChange={(e) => setSettings({...settings, eventVenue: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 outline-none focus:border-amber-500/50 disabled:opacity-50 transition-colors" /></div>
+                <div><label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">Vibe</label><input disabled={!isCurrentEventActive} value={settings.eventVibe} onChange={(e) => setSettings({...settings, eventVibe: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 outline-none focus:border-amber-500/50 disabled:opacity-50 transition-colors" /></div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-white/10">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-5 border-t border-white/10">
                   <div>
-                    <label className="text-xs text-neutral-500 uppercase">Stag Entry Price (₹)</label>
-                    <input type="number" disabled={!isCurrentEventActive} value={settings.stagPrice || ""} onChange={(e) => setSettings({...settings, stagPrice: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" />
+                    <label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">Stag Price (₹)</label>
+                    <input type="number" disabled={!isCurrentEventActive} value={settings.stagPrice || ""} onChange={(e) => setSettings({...settings, stagPrice: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 outline-none focus:border-amber-500/50 disabled:opacity-50 transition-colors" />
                   </div>
                   <div>
-                    <label className="text-xs text-neutral-500 uppercase">Couple Entry Price (₹)</label>
-                    <input type="number" disabled={!isCurrentEventActive} value={settings.couplePrice || ""} onChange={(e) => setSettings({...settings, couplePrice: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 disabled:opacity-50" />
+                    <label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">Couple Price (₹)</label>
+                    <input type="number" disabled={!isCurrentEventActive} value={settings.couplePrice || ""} onChange={(e) => setSettings({...settings, couplePrice: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 outline-none focus:border-amber-500/50 disabled:opacity-50 transition-colors" />
                   </div>
                 </div>
-
               </div>
             </GlassCard>
 
-            <div className="space-y-8">
-              <GlassCard className="p-6 sm:p-8 border-white/10">
-                <div className="flex items-center gap-3 mb-6 text-blue-400">
+            <div className="space-y-6">
+              <GlassCard className="p-6 sm:p-8 border-white/10 rounded-[2rem] bg-white/[0.02]">
+                <div className="flex items-center gap-3 mb-6 text-blue-400 border-b border-white/5 pb-4">
                   <IndianRupee className="w-5 h-5" />
-                  <h2 className="text-xl font-medium text-white">Payment Setup</h2>
+                  <h2 className="text-xl font-bold text-white tracking-wide">Payment Setup</h2>
                 </div>
                 
                 <div className="space-y-6 text-white">
-                  <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                     <label className="text-xs text-neutral-500 uppercase mb-2 block font-bold tracking-wider">Active Payment Gateway</label>
-                     <div className="flex gap-2">
+                  <div className="bg-black/40 p-5 rounded-2xl border border-white/5">
+                     <label className="text-xs text-neutral-500 uppercase mb-3 block font-bold tracking-widest">Active Gateway</label>
+                     <div className="flex flex-col sm:flex-row gap-3">
                         <button 
                           onClick={() => setSettings({...settings, paymentMode: "manual"})} 
                           disabled={!isCurrentEventActive}
-                          className={`flex-1 py-3 rounded-lg text-xs uppercase font-bold tracking-widest transition-all border ${settings.paymentMode === "manual" ? "bg-amber-500 text-black border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]" : "bg-black/50 border-white/10 text-neutral-500 hover:text-white"}`}
+                          className={`flex-1 py-3.5 rounded-xl text-xs uppercase font-bold tracking-widest transition-all border ${settings.paymentMode === "manual" ? "bg-amber-500 text-black border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)]" : "bg-white/5 border-white/10 text-neutral-500 hover:text-white"}`}
                         >
-                          Manual (QR / UPI)
+                          Manual (QR/UPI)
                         </button>
                         <button 
                           onClick={() => setSettings({...settings, paymentMode: "razorpay"})} 
                           disabled={!isCurrentEventActive}
-                          className={`flex-1 py-3 rounded-lg text-xs uppercase font-bold tracking-widest transition-all border ${settings.paymentMode === "razorpay" ? "bg-blue-600 text-white border-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.2)] flex items-center justify-center gap-2" : "bg-black/50 border-white/10 text-neutral-500 hover:text-white flex items-center justify-center gap-2"}`}
+                          className={`flex-1 py-3.5 rounded-xl text-xs uppercase font-bold tracking-widest transition-all border ${settings.paymentMode === "razorpay" ? "bg-blue-600 text-white border-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.3)] flex items-center justify-center gap-2" : "bg-white/5 border-white/10 text-neutral-500 hover:text-white flex items-center justify-center gap-2"}`}
                         >
                           <CreditCard className="w-4 h-4"/> Auto (Razorpay)
                         </button>
@@ -609,118 +664,120 @@ export default function AdminDashboard() {
 
                   <AnimatePresence mode="wait">
                     {settings.paymentMode === "manual" ? (
-                      <motion.div key="manual" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="space-y-4">
-                        <div><label className="text-xs text-neutral-500 uppercase">UPI ID</label><input disabled={!isCurrentEventActive} value={settings.upiId} onChange={(e) => setSettings({...settings, upiId: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 mt-1 outline-none focus:border-white/30 text-white disabled:opacity-50" /></div>
+                      <motion.div key="manual" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="space-y-5">
+                        <div><label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">UPI ID</label><input disabled={!isCurrentEventActive} value={settings.upiId} onChange={(e) => setSettings({...settings, upiId: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 outline-none focus:border-amber-500/50 disabled:opacity-50 transition-colors" /></div>
                         <div>
-                          <label className="text-xs text-neutral-500 uppercase">QR Code</label>
-                          <div className="flex flex-col sm:flex-row gap-4 items-center mt-2">
-                            <div className="w-24 h-24 flex-shrink-0 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
-                              {settings.qrCode ? <img src={settings.qrCode} className="w-full h-full object-contain" /> : <X className="text-neutral-500" />}
+                          <label className="text-xs text-neutral-500 uppercase font-bold tracking-wider mb-1.5 block">QR Code</label>
+                          <div className="flex flex-col sm:flex-row gap-4 items-center">
+                            <div className="w-28 h-28 flex-shrink-0 bg-black/80 border border-white/10 rounded-xl overflow-hidden flex items-center justify-center shadow-inner">
+                              {settings.qrCode ? <img src={settings.qrCode} className="w-full h-full object-contain p-2" /> : <X className="text-neutral-600" />}
                             </div>
                             {isCurrentEventActive && (
-                              <label className="flex-1 w-full border-2 border-dashed border-white/20 rounded-lg p-4 text-center cursor-pointer hover:bg-white/5 flex flex-col items-center justify-center"><UploadCloud className="w-6 h-6 mb-1 text-neutral-500" /><span className="text-xs text-neutral-500 italic">Change QR</span><input type="file" className="hidden" onChange={handleQrUpload} /></label>
+                              <label className="flex-1 w-full h-28 border-2 border-dashed border-white/10 hover:border-amber-500/50 rounded-xl p-4 text-center cursor-pointer hover:bg-white/5 flex flex-col items-center justify-center transition-colors"><UploadCloud className="w-6 h-6 mb-2 text-neutral-500" /><span className="text-xs text-neutral-400 font-medium">Upload New QR</span><input type="file" className="hidden" onChange={handleQrUpload} /></label>
                             )}
                           </div>
                         </div>
                       </motion.div>
                     ) : (
-                      <motion.div key="razorpay" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="space-y-4">
+                      <motion.div key="razorpay" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} className="space-y-5">
                         <div>
-                           <label className="text-xs text-blue-400 uppercase font-bold tracking-widest flex items-center gap-1 mb-1"><Sparkles className="w-3 h-3"/> Razorpay Key ID</label>
-                           <input type="text" disabled={!isCurrentEventActive} value={settings.razorpayKey} onChange={(e) => setSettings({...settings, razorpayKey: e.target.value})} placeholder="rzp_test_..." className="w-full bg-blue-900/10 border border-blue-500/30 rounded-lg p-3 mt-1 outline-none focus:border-blue-500/50 text-white disabled:opacity-50 font-mono text-sm" />
+                           <label className="text-xs text-blue-400 uppercase font-bold tracking-widest flex items-center gap-1.5 mb-1.5"><Sparkles className="w-3 h-3"/> Razorpay Key ID</label>
+                           <input type="text" disabled={!isCurrentEventActive} value={settings.razorpayKey} onChange={(e) => setSettings({...settings, razorpayKey: e.target.value})} className="w-full bg-blue-900/10 border border-blue-500/30 rounded-xl p-3.5 outline-none focus:border-blue-500/50 text-white disabled:opacity-50 font-mono text-sm shadow-inner" />
                         </div>
                         <div>
-                           <label className="text-xs text-blue-400 uppercase font-bold tracking-widest flex items-center gap-1 mb-1"><Lock className="w-3 h-3"/> Razorpay Key Secret</label>
-                           <input type="password" disabled={!isCurrentEventActive} value={settings.razorpaySecret} onChange={(e) => setSettings({...settings, razorpaySecret: e.target.value})} placeholder="Secret Key..." className="w-full bg-blue-900/10 border border-blue-500/30 rounded-lg p-3 mt-1 outline-none focus:border-blue-500/50 text-white disabled:opacity-50 font-mono text-sm" />
-                           <p className="text-[10px] text-neutral-500 mt-2 italic">Dono keys Razorpay Dashboard se copy karke yahan paste karein. Yeh database mein securely save ho jayengi.</p>
+                           <label className="text-xs text-blue-400 uppercase font-bold tracking-widest flex items-center gap-1.5 mb-1.5"><Lock className="w-3 h-3"/> Razorpay Key Secret</label>
+                           <input type="password" disabled={!isCurrentEventActive} value={settings.razorpaySecret} onChange={(e) => setSettings({...settings, razorpaySecret: e.target.value})} className="w-full bg-blue-900/10 border border-blue-500/30 rounded-xl p-3.5 outline-none focus:border-blue-500/50 text-white disabled:opacity-50 font-mono text-sm shadow-inner" />
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
-
                 </div>
               </GlassCard>
               
-              <button onClick={saveSettings} disabled={savingSettings || !isCurrentEventActive} className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold flex justify-center items-center gap-3 transition-colors text-white shadow-xl shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed">
-                {savingSettings ? <Loader2 className="animate-spin w-5 h-5" /> : isCurrentEventActive ? "Publish All Changes" : "Locked (Cannot Edit)"}
+              <button onClick={saveSettings} disabled={savingSettings || !isCurrentEventActive} className="w-full bg-gradient-to-r from-amber-500 to-yellow-400 text-black hover:from-amber-400 hover:to-yellow-300 py-4 rounded-2xl font-black uppercase tracking-widest flex justify-center items-center gap-3 transition-all shadow-[0_10px_30px_rgba(245,158,11,0.2)] disabled:opacity-50 disabled:cursor-not-allowed">
+                {savingSettings ? <Loader2 className="animate-spin w-5 h-5" /> : isCurrentEventActive ? "Save Settings" : "Event Locked"}
               </button>
             </div>
           </div>
         )}
 
-        {/* --- STATS GRID --- */}
+        {/* 🚀 RESPONSIVE STATS GRID */}
         {view === "Overview" && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 no-print animate-in fade-in duration-500">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 no-print animate-in fade-in duration-500">
             {stats.map((stat: any, i: number) => (
               <div key={i} onClick={() => setView(stat.target)} className="cursor-pointer h-full">
-                <GlassCard className="p-6 flex items-center justify-between hover:bg-white/5 transition-all group h-full">
-                  <div>
-                    <p className="text-neutral-400 text-xs uppercase tracking-widest mb-1 group-hover:text-white transition-colors">{stat.label}</p>
-                    <p className="text-3xl font-semibold">{stat.value}</p>
+                <GlassCard className="p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between hover:bg-white/5 transition-all group h-full rounded-2xl border-white/5 bg-white/[0.02]">
+                  <div className="mb-3 sm:mb-0">
+                    <p className="text-neutral-500 text-[10px] sm:text-xs uppercase tracking-widest mb-1 font-bold group-hover:text-neutral-300 transition-colors">{stat.label}</p>
+                    <p className="text-2xl sm:text-3xl font-black text-white">{stat.value}</p>
                   </div>
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${stat.bg} ${stat.color} flex-shrink-0`}><stat.icon className="w-6 h-6" /></div>
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center ${stat.bg} ${stat.color} flex-shrink-0`}><stat.icon className="w-5 h-5 sm:w-6 sm:h-6" /></div>
                 </GlassCard>
               </div>
             ))}
             
-            <GlassCard className="p-6 flex items-center justify-between bg-purple-500/5 border-purple-500/20 h-full">
-              <div><p className="text-neutral-400 text-xs uppercase tracking-widest mb-1">Revenue Received</p><p className="text-3xl font-semibold text-purple-400">₹{revenueReceived}</p></div>
-              <div className="w-12 h-12 rounded-full flex items-center justify-center bg-purple-500/20 text-purple-400 font-bold flex-shrink-0"><IndianRupee className="w-6 h-6" /></div>
+            <GlassCard className="p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-purple-500/5 border-purple-500/20 h-full rounded-2xl cursor-default">
+              <div className="mb-3 sm:mb-0">
+                <p className="text-purple-400/70 text-[10px] sm:text-xs uppercase tracking-widest mb-1 font-bold">Revenue</p>
+                <p className="text-2xl sm:text-3xl font-black text-purple-400">₹{revenueReceived}</p>
+              </div>
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center bg-purple-500/20 text-purple-400 flex-shrink-0"><IndianRupee className="w-5 h-5 sm:w-6 sm:h-6" /></div>
             </GlassCard>
           </div>
         )}
 
+        {/* 🚀 RESPONSIVE GLOBAL CRM */}
         {view === "CRM" && (
-          <GlassCard className="p-0 overflow-hidden table-container border-white/10 animate-in fade-in duration-700">
-            <div className="p-4 sm:p-6 border-b border-white/10 font-medium no-print flex justify-between items-center bg-indigo-500/5">
-              <span className="text-sm sm:text-base text-indigo-400 flex items-center gap-2"><Database className="w-5 h-5"/> Global Customer Database</span>
+          <GlassCard className="p-0 overflow-hidden table-container border-white/5 bg-white/[0.01] rounded-2xl animate-in fade-in duration-700 shadow-2xl">
+            <div className="p-5 sm:p-6 border-b border-white/5 font-medium no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-indigo-500/5">
+              <span className="text-sm sm:text-base text-indigo-400 font-bold tracking-wide flex items-center gap-2"><Database className="w-5 h-5"/> Global Customer Data</span>
               {crmLoading && <Loader2 className="animate-spin w-4 h-4 text-indigo-400 flex-shrink-0" />}
             </div>
             
-            <div className="overflow-x-auto">
-              <table className="w-full text-left whitespace-nowrap min-w-[800px]">
-                <thead className="text-xs text-neutral-400 uppercase tracking-widest border-b border-white/5 bg-white/5">
-                  <tr><th className="p-4">Mobile Number</th><th className="p-4">Name (Last Recorded)</th><th className="p-4">Total Value</th><th className="p-4">Events</th><th className="p-4">Status</th><th className="p-4 text-center">Admin Actions</th></tr>
+            <div className="overflow-x-auto hide-scrollbar">
+              <table className="w-full text-left whitespace-nowrap min-w-[900px]">
+                <thead className="text-[10px] text-neutral-500 uppercase tracking-widest border-b border-white/5 bg-black/40 font-bold">
+                  <tr><th className="p-4 pl-6">Mobile Number</th><th className="p-4">Name</th><th className="p-4">LTV (Value)</th><th className="p-4">Events</th><th className="p-4">Status</th><th className="p-4 text-center pr-6">Actions</th></tr>
                 </thead>
                 <tbody className="text-sm">
                   {filteredCrmData.length === 0 ? (
-                    <tr><td colSpan={6} className="p-8 text-center text-neutral-500 italic">No CRM records found.</td></tr>
+                    <tr><td colSpan={6} className="p-10 text-center text-neutral-500 italic">No CRM records found.</td></tr>
                   ) : (
                     filteredCrmData.map((guest: any, idx: number) => (
                       <Fragment key={idx}>
                         <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                          <td className="p-4 font-mono font-medium">{guest.mobileNumber}</td>
-                          <td className="p-4 capitalize text-neutral-300">{guest.firstName} {guest.lastName}</td>
-                          <td className="p-4 text-emerald-400 font-mono">₹{guest.totalSpent}</td>
-                          <td className="p-4"><span className="bg-white/10 px-2 py-1 rounded text-xs">{guest.eventsAttended?.length || 0} events</span></td>
+                          <td className="p-4 pl-6 font-mono font-medium text-white">{guest.mobileNumber}</td>
+                          <td className="p-4 capitalize text-neutral-300 font-medium">{guest.firstName} {guest.lastName}</td>
+                          <td className="p-4 text-emerald-400 font-mono font-bold">₹{guest.totalSpent}</td>
+                          <td className="p-4"><span className="bg-white/5 border border-white/10 px-2.5 py-1 rounded-md text-xs font-medium text-neutral-300">{guest.eventsAttended?.length || 0}</span></td>
                           <td className="p-4">
-                            {guest.isBlacklisted ? <span className="bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest flex items-center gap-1 w-fit"><ShieldAlert className="w-3 h-3"/> Blacklisted</span> : <span className="bg-green-500/10 border border-green-500/20 text-green-400 px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest flex items-center gap-1 w-fit"><UserCheck className="w-3 h-3"/> Active</span>}
+                            {guest.isBlacklisted ? <span className="bg-red-500/10 border border-red-500/20 text-red-400 px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest flex items-center gap-1.5 w-fit"><ShieldAlert className="w-3 h-3"/> Banned</span> : <span className="bg-green-500/10 border border-green-500/20 text-green-400 px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-widest flex items-center gap-1.5 w-fit"><UserCheck className="w-3 h-3"/> Active</span>}
                           </td>
-                          <td className="p-4 flex justify-center items-center gap-2">
-                            <button onClick={() => setExpandedCrmGuest(expandedCrmGuest === guest.mobileNumber ? null : guest.mobileNumber)} className="flex items-center gap-1 bg-white/5 border border-white/10 text-neutral-300 hover:bg-white/10 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"><History className="w-3 h-3"/> History {expandedCrmGuest === guest.mobileNumber ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>}</button>
-                            <button onClick={() => toggleBlacklist(guest.mobileNumber, guest.isBlacklisted)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${guest.isBlacklisted ? 'bg-neutral-800 border-neutral-600 text-neutral-300 hover:bg-neutral-700' : 'bg-orange-500/10 border-orange-500/20 text-orange-400 hover:bg-orange-500/20'}`}>{guest.isBlacklisted ? "Unban" : <><UserX className="w-3 h-3"/> Ban</>}</button>
-                            <button onClick={() => handleCrmDelete(guest.mobileNumber, guest.firstName)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20" title="Delete all history"><Trash2 className="w-3 h-3"/> Delete</button>
+                          <td className="p-4 pr-6 flex justify-center items-center gap-2">
+                            <button onClick={() => setExpandedCrmGuest(expandedCrmGuest === guest.mobileNumber ? null : guest.mobileNumber)} className="flex items-center gap-1.5 bg-white/5 border border-white/10 text-neutral-300 hover:bg-white/10 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all"><History className="w-3.5 h-3.5"/> History {expandedCrmGuest === guest.mobileNumber ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>}</button>
+                            <button onClick={() => toggleBlacklist(guest.mobileNumber, guest.isBlacklisted)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${guest.isBlacklisted ? 'bg-neutral-800 border-neutral-600 text-neutral-300 hover:bg-neutral-700' : 'bg-orange-500/10 border-orange-500/20 text-orange-400 hover:bg-orange-500/20'}`}>{guest.isBlacklisted ? "Unban" : <><UserX className="w-3.5 h-3.5"/> Ban</>}</button>
+                            <button onClick={() => handleCrmDelete(guest.mobileNumber, guest.firstName)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20 hover:text-red-300" title="Delete record"><Trash2 className="w-3.5 h-3.5"/></button>
                           </td>
                         </tr>
                         
                         <AnimatePresence>
                           {expandedCrmGuest === guest.mobileNumber && (
-                            <tr className="bg-black/40 border-b border-white/5">
+                            <tr className="bg-black/60 border-b border-white/5">
                               <td colSpan={6} className="p-0">
                                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                                  <div className="p-6">
-                                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2"><History className="w-4 h-4"/> Event Attendance History</h4>
+                                  <div className="p-6 sm:p-8">
+                                    <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2"><History className="w-4 h-4"/> Event Attendance History</h4>
                                     {guest.eventsAttended?.length === 0 ? <p className="text-sm text-neutral-500 italic">No events recorded.</p> : (
                                       <div className="space-y-3">
                                         {guest.eventsAttended.map((evt: any, i: number) => {
                                           const evtDetails = allEvents.find((e: any) => e.eventId === evt.eventId);
                                           return (
-                                            <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                              <div className="flex flex-col"><span className="text-sm font-bold text-white">{evtDetails ? evtDetails.mainTitle : evt.eventId}</span><span className="text-xs text-neutral-400 mt-1 font-mono">{evtDetails?.eventDate ? `${evtDetails.eventDate} • ${evtDetails.eventTime || ''}` : 'Date TBA'}</span></div>
+                                            <div key={i} className="bg-white/[0.02] border border-white/5 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/[0.04] transition-colors">
+                                              <div className="flex flex-col"><span className="text-sm font-bold text-white tracking-wide">{evtDetails ? evtDetails.mainTitle : evt.eventId}</span><span className="text-xs text-neutral-500 mt-1 font-mono">{evtDetails?.eventDate ? `${evtDetails.eventDate} • ${evtDetails.eventTime || ''}` : 'Date TBA'}</span></div>
                                               <div className="flex gap-2 items-center flex-wrap">
-                                                <span className={`text-[9px] uppercase tracking-widest px-2 py-1 rounded font-bold ${evt.status === 'Confirmed' || evt.status === 'Checked-In' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-neutral-800 text-neutral-400 border border-neutral-700'}`}>{evt.status}</span>
-                                                {evt.isCaptain && <span className="text-[9px] uppercase tracking-widest px-2 py-1 rounded font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1"><Crown className="w-3 h-3"/> Captain</span>}
-                                                {evt.isSubordinate && <span className="text-[9px] uppercase tracking-widest px-2 py-1 rounded font-bold bg-white/10 text-neutral-300 border border-white/20 flex items-center gap-1"><User className="w-3 h-3"/> Pax</span>}
+                                                <span className={`text-[9px] uppercase tracking-widest px-2.5 py-1 rounded-md font-bold border ${evt.status === 'Confirmed' || evt.status === 'Checked-In' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-neutral-800 text-neutral-400 border-neutral-700'}`}>{evt.status}</span>
+                                                {evt.isCaptain && <span className="text-[9px] uppercase tracking-widest px-2.5 py-1 rounded-md font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1.5"><Crown className="w-3 h-3"/> Captain</span>}
+                                                {evt.isSubordinate && <span className="text-[9px] uppercase tracking-widest px-2.5 py-1 rounded-md font-bold bg-white/10 text-neutral-300 border border-white/20 flex items-center gap-1.5"><User className="w-3 h-3"/> Pax</span>}
                                               </div>
                                             </div>
                                           );
@@ -742,66 +799,76 @@ export default function AdminDashboard() {
           </GlassCard>
         )}
         
+        {/* 🚀 RESPONSIVE GUEST LIST TABLE */}
         {view !== "Settings" && view !== "CRM" && (
-          <GlassCard className="p-0 overflow-hidden table-container border-white/10 animate-in fade-in duration-700">
-            <div className="p-4 sm:p-6 border-b border-white/10 font-medium no-print flex justify-between items-center">
-              <span className="text-sm sm:text-base">Displaying {filteredGuests.length} Guests in {settings.mainTitle}</span>
-              {loading && <Loader2 className="animate-spin w-4 h-4 text-neutral-500 flex-shrink-0" />}
+          <GlassCard className="p-0 overflow-hidden table-container border-white/5 bg-white/[0.01] rounded-2xl animate-in fade-in duration-700 shadow-2xl">
+            <div className="p-5 sm:p-6 border-b border-white/5 font-medium no-print flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/[0.02]">
+              <span className="text-sm sm:text-base font-bold text-white tracking-wide">Displaying {filteredGuests.length} Guests</span>
+              {loading && <Loader2 className="animate-spin w-5 h-5 text-amber-500 flex-shrink-0" />}
             </div>
             
-            <div className="overflow-x-auto">
-              <table className="w-full text-left whitespace-nowrap min-w-[800px]">
-                <thead className="text-xs text-neutral-400 uppercase tracking-widest border-b border-white/5 bg-white/5">
-                  <tr><th className="p-4">Name</th><th className="p-4 no-print">Contact</th><th className="p-4 no-print">Amount</th><th className="p-4">Unique ID</th><th className="p-4">Status</th><th className="p-4 text-center no-print">Actions</th></tr>
+            <div className="overflow-x-auto hide-scrollbar">
+              <table className="w-full text-left whitespace-nowrap min-w-[900px]">
+                <thead className="text-[10px] text-neutral-500 uppercase tracking-widest border-b border-white/5 bg-black/40 font-bold">
+                  <tr><th className="p-4 pl-6">Guest Profile</th><th className="p-4 no-print">Contact</th><th className="p-4 no-print">Amount</th><th className="p-4">Entry Code</th><th className="p-4">Status</th><th className="p-4 text-center pr-6 no-print">Quick Actions</th></tr>
                 </thead>
                 <tbody className="text-sm">
                   {filteredGuests.length === 0 ? (
-                    <tr><td colSpan={6} className="p-8 text-center text-neutral-500 italic">No guests found.</td></tr>
+                    <tr><td colSpan={6} className="p-10 text-center text-neutral-500 italic">No guests found for this criteria.</td></tr>
                   ) : (
                     filteredGuests.map((guest: any) => (
-                      <tr key={guest.id || guest._id || Math.random()} className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors ${guest.isSubordinate ? 'bg-white/[0.01]' : ''}`}>
+                      <tr key={guest.id || guest._id || Math.random()} className={`border-b border-white/5 hover:bg-white/[0.03] transition-colors ${guest.isSubordinate ? 'bg-white/[0.01]' : ''}`}>
                         
-                        <td className="p-4 capitalize font-medium">
-                          <div className="flex items-center gap-2">
-                            {guest.isSubordinate && <div className="w-3 h-3 border-l-2 border-b-2 border-neutral-600 rounded-bl ml-2 opacity-50"></div>}
-                            <span>{guest.firstName} {guest.lastName}</span>
+                        <td className="p-4 pl-6 capitalize font-medium">
+                          <div className="flex items-center gap-3">
+                            {guest.isSubordinate && <div className="w-4 h-4 border-l-2 border-b-2 border-neutral-700 rounded-bl ml-2 opacity-50"></div>}
+                            <span className="text-white">{guest.firstName} {guest.lastName}</span>
                             
                             {/* 🚀 ELITE BADGES */}
-                            {guest.isCaptain && guest.entryType !== 'Couple' && <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest flex items-center gap-1"><Crown className="w-3 h-3"/> Captain</span>}
-                            {guest.entryType === 'Couple' && !guest.isSubordinate && <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest flex items-center gap-1"><Heart className="w-3 h-3"/> Couple</span>}
-                            {guest.entryType === 'Group' && !guest.isSubordinate && !guest.isCaptain && <span className="bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest flex items-center gap-1"><Users className="w-3 h-3"/> Group Lead</span>}
-                            
-                            {guest.isSubordinate && guest.source === 'couple_partner' && <span className="bg-rose-500/5 text-rose-300 border border-rose-500/10 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest flex items-center gap-1"><Heart className="w-3 h-3"/> Partner</span>}
-                            {guest.isSubordinate && guest.source !== 'couple_partner' && <span className="bg-white/5 text-neutral-400 border border-white/10 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest flex items-center gap-1"><User className="w-3 h-3"/> Pax</span>}
-                            {(!guest.entryType || guest.entryType === 'Stag') && !guest.isSubordinate && !guest.isCaptain && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest flex items-center gap-1"><User className="w-3 h-3"/> Stag</span>}
+                            <div className="flex gap-1.5 items-center flex-wrap">
+                              {guest.isCaptain && guest.entryType !== 'Couple' && <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1 shadow-sm"><Crown className="w-3 h-3"/> Captain</span>}
+                              {guest.entryType === 'Couple' && !guest.isSubordinate && <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1 shadow-sm"><Heart className="w-3 h-3"/> Couple</span>}
+                              {guest.entryType === 'Group' && !guest.isSubordinate && !guest.isCaptain && <span className="bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1 shadow-sm"><Users className="w-3 h-3"/> Group Lead</span>}
+                              
+                              {guest.isSubordinate && guest.source === 'couple_partner' && <span className="bg-rose-500/5 text-rose-300 border border-rose-500/10 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1"><Heart className="w-3 h-3"/> Partner</span>}
+                              {guest.isSubordinate && guest.source !== 'couple_partner' && <span className="bg-white/5 text-neutral-400 border border-white/10 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1"><User className="w-3 h-3"/> Pax</span>}
+                              {(!guest.entryType || guest.entryType === 'Stag') && !guest.isSubordinate && !guest.isCaptain && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1 shadow-sm"><User className="w-3 h-3"/> Stag</span>}
+                              
+                              {/* 🚀 THE NEW TABLE BADGE */}
+                              {guest.tableId && (
+                                <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1 shadow-sm">
+                                  T: {tables.find((t: any) => t.id === guest.tableId)?.tableName || "VIP"}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
 
-                        <td className="p-4 text-neutral-400 no-print">{guest.mobileNumber}</td>
-                        <td className="p-4 text-purple-400 font-mono no-print">{guest.isSubordinate ? <span className="text-neutral-600">-</span> : guest.isCaptain && guest.tableId ? `₹${tables.find((t: any) => t.id === guest.tableId)?.minSpend || guest.amount || 0}` : `₹${guest.amount || 0}`}</td>
-                        <td className="p-4 font-mono text-amber-400 font-bold tracking-widest">{guest.entryCode || "N/A"}</td>
+                        <td className="p-4 text-neutral-400 font-mono no-print text-xs">{guest.mobileNumber}</td>
+                        <td className="p-4 text-emerald-400 font-mono font-bold no-print">{guest.isSubordinate ? <span className="text-neutral-600">-</span> : guest.isCaptain && guest.tableId ? `₹${tables.find((t: any) => t.id === guest.tableId)?.minSpend || guest.amount || 0}` : `₹${guest.amount || 0}`}</td>
+                        <td className="p-4 font-mono text-amber-400 font-bold tracking-widest bg-amber-500/5 px-3 rounded-lg w-max inline-block mt-2 border border-amber-500/10">{guest.entryCode || "N/A"}</td>
                         <td className="p-4">
-                          <span className={`print-badge px-2 py-1 rounded text-[10px] border whitespace-nowrap
-                            ${guest.rsvpStatus === 'Confirmed' ? 'text-green-400 border-green-500/20 bg-green-500/5' : 
-                              guest.rsvpStatus === 'Checked-In' ? 'text-purple-400 border-purple-500/40 bg-purple-500/10 font-bold tracking-widest uppercase' :
-                              guest.rsvpStatus === 'Need Verification' ? 'text-blue-400 border-blue-500/20 bg-blue-500/10 animate-pulse' :
-                              guest.rsvpStatus === 'Failed' ? 'text-red-400 border-red-500/20 bg-red-500/5' :
-                              guest.rsvpStatus === 'Not Attended' ? 'text-zinc-400 border-zinc-500/20 bg-zinc-500/5' : 'text-amber-400 border-amber-500/20 bg-amber-500/5'}`}
+                          <span className={`print-badge px-2.5 py-1 rounded-md text-[10px] border whitespace-nowrap font-bold tracking-widest uppercase shadow-sm
+                            ${guest.rsvpStatus === 'Confirmed' ? 'text-green-400 border-green-500/20 bg-green-500/10' : 
+                              guest.rsvpStatus === 'Checked-In' ? 'text-purple-400 border-purple-500/40 bg-purple-500/10' :
+                              guest.rsvpStatus === 'Need Verification' ? 'text-blue-400 border-blue-500/30 bg-blue-500/10 animate-pulse' :
+                              guest.rsvpStatus === 'Failed' ? 'text-red-400 border-red-500/20 bg-red-500/10' :
+                              guest.rsvpStatus === 'Not Attended' ? 'text-zinc-400 border-zinc-500/20 bg-zinc-500/10' : 'text-amber-400 border-amber-500/20 bg-amber-500/10'}`}
                           >{guest.rsvpStatus}</span>
                         </td>
-                        <td className="p-4 flex justify-center items-center gap-3 no-print">
+                        <td className="p-4 pr-6 flex justify-center items-center gap-1.5 no-print">
                            {(guest.rsvpStatus === 'Need Verification' || guest.screenshot) && !guest.isSubordinate && isCurrentEventActive && (
-                             <button onClick={() => openVerifyModal(guest)} className="text-blue-400 hover:text-white" title="Verify Proof"><Eye className="w-5 h-5"/></button>
+                             <button onClick={() => openVerifyModal(guest)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white transition-colors" title="Verify Proof"><Eye className="w-4 h-4"/></button>
                            )}
-                           <button onClick={() => openWhatsApp(guest)} className="text-neutral-400 hover:text-green-400" title="Send WhatsApp Update"><MessageCircle className="w-5 h-5"/></button>
+                           <button onClick={() => openWhatsApp(guest)} className="p-2 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-colors" title="Send WhatsApp Update"><MessageCircle className="w-4 h-4"/></button>
                            {(guest.rsvpStatus === 'Confirmed' || guest.rsvpStatus === 'Checked-In') && (
-                             <button onClick={() => downloadVIPPass(guest)} className="text-amber-400 hover:text-amber-300" title="Download VIP Pass"><Ticket className="w-5 h-5"/></button>
+                             <button onClick={() => downloadVIPPass(guest)} className="p-2 bg-amber-500/10 text-amber-500 rounded-lg hover:bg-amber-500 hover:text-black transition-colors" title="Download VIP Pass"><Ticket className="w-4 h-4"/></button>
                            )}
                            {isCurrentEventActive && (
-                             <button onClick={() => openEditModal(guest)} className="text-neutral-400 hover:text-white" title="Edit"><Edit className="w-5 h-5"/></button>
+                             <button onClick={() => openEditModal(guest)} className="p-2 bg-white/5 text-neutral-300 rounded-lg hover:bg-white hover:text-black transition-colors" title="Edit"><Edit className="w-4 h-4"/></button>
                            )}
                            {isCurrentEventActive && (
-                             <button onClick={() => handleDelete(guest.id || guest._id, guest.firstName)} className="text-neutral-500 hover:text-red-500" title="Delete"><Trash2 className="w-5 h-5"/></button>
+                             <button onClick={() => handleDelete(guest.id || guest._id, guest.firstName)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white transition-colors" title="Delete"><Trash2 className="w-4 h-4"/></button>
                            )}
                         </td>
                       </tr>
@@ -815,70 +882,111 @@ export default function AdminDashboard() {
       </div>
 
       <AnimatePresence>
+        {isScannerOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md no-print">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="z-10 w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-3xl overflow-hidden relative shadow-2xl">
+              <button onClick={() => { setIsScannerOpen(false); setScannedResult(null); }} className="absolute top-4 right-4 z-20 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all"><X className="w-5 h-5"/></button>
+              {!scannedResult ? (
+                <div className="p-6">
+                  <h2 className="text-xl text-center text-white font-bold tracking-wide mb-6">Scan Entry Pass</h2>
+                  
+                  {/* 🚀 FIXED: Added components config to fix audio block & format parser */}
+                  <div className="rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(251,191,36,0.15)] relative bg-black aspect-square flex items-center justify-center">
+                    <Scanner 
+                      onScan={handleScan} 
+                      components={{ audio: false }}
+                      allowMultiple={false}
+                    />
+                  </div>
+                  
+                  <p className="text-center text-neutral-500 text-sm mt-4 animate-pulse">Position QR Code within the frame...</p>
+                </div>
+              ) : (
+                <div className="p-6 sm:p-8 text-center bg-gradient-to-b from-neutral-900 to-black">
+                  {scannedResult.error ? (
+                    <div><div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20"><X className="w-10 h-10 text-red-500"/></div><h2 className="text-2xl text-white font-bold">Invalid Pass</h2><p className="text-red-400 font-mono mt-2">{scannedResult.code}</p><p className="text-neutral-400 mt-2 text-sm">This code does not exist in the database.</p></div>
+                  ) : (
+                    <div>
+                      <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20"><CheckCircle2 className="w-10 h-10 text-green-500"/></div>
+                      <h2 className="text-2xl sm:text-3xl text-white font-bold capitalize">{scannedResult.firstName} {scannedResult.lastName}</h2>
+                      <div className="bg-white/5 py-2 px-4 rounded-lg inline-block mt-3 border border-white/10"><p className="text-amber-400 font-mono tracking-widest text-lg font-bold">{scannedResult.entryCode}</p></div>
+                      <p className={`mt-4 uppercase tracking-widest text-xs font-bold ${scannedResult.rsvpStatus === 'Confirmed' ? 'text-green-400' : scannedResult.rsvpStatus === 'Checked-In' ? 'text-purple-400' : 'text-red-400'}`}>Status: {scannedResult.rsvpStatus}</p>
+                      {scannedResult.rsvpStatus !== 'Checked-In' && <button onClick={() => markCheckedIn(scannedResult)} className="mt-8 w-full py-4 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-all active:scale-95 text-lg">Mark as Checked-In</button>}
+                    </div>
+                  )}
+                  <button onClick={() => setScannedResult(null)} className="mt-6 text-neutral-400 hover:text-white transition-colors uppercase tracking-widest text-xs">Scan Another Pass</button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="z-10 w-full max-w-md">
-              <GlassCard className="p-6 sm:p-8 relative border-white/10">
-                <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-neutral-500 hover:text-white transition-colors"><X className="w-5 h-5"/></button>
-                <h2 className="text-xl font-light mb-6 text-white">{isEditing ? "Edit Guest Details" : "Add New Guest"}</h2>
+              <GlassCard className="p-6 sm:p-8 relative border-white/10 rounded-[2rem] bg-[#0a0a0a]">
+                <button onClick={() => setIsModalOpen(false)} className="absolute top-5 right-5 text-neutral-500 hover:text-white transition-colors bg-white/5 p-2 rounded-full"><X className="w-5 h-5"/></button>
+                <h2 className="text-xl font-bold mb-6 text-white tracking-wide">{isEditing ? "Edit Guest Details" : "Add New Guest"}</h2>
                 
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-5">
                   {isSearchCrmMode ? (
                     <div className="space-y-4">
                       <div className="relative">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-                        <input autoFocus placeholder="Search CRM by Name or Mobile..." className="w-full bg-black/50 border border-indigo-500/30 rounded-lg pl-10 pr-4 py-3 text-white outline-none focus:border-indigo-500 transition-all" value={crmAddSearchQuery} onChange={(e) => setCrmAddSearchQuery(e.target.value)} />
+                        <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" />
+                        <input autoFocus placeholder="Search CRM by Name or Mobile..." className="w-full bg-black border border-indigo-500/30 rounded-xl pl-11 pr-4 py-3.5 text-sm text-white outline-none focus:border-indigo-500 transition-all shadow-inner" value={crmAddSearchQuery} onChange={(e) => setCrmAddSearchQuery(e.target.value)} />
                       </div>
-                      <div className="max-h-40 overflow-y-auto space-y-2">
-                        {modalCrmResults.length === 0 && crmAddSearchQuery && <p className="text-xs text-neutral-500 text-center py-2">No guest found in CRM.</p>}
+                      <div className="max-h-48 overflow-y-auto space-y-2 pr-1 hide-scrollbar">
+                        {modalCrmResults.length === 0 && crmAddSearchQuery && <p className="text-xs text-neutral-500 text-center py-4 bg-white/5 rounded-xl border border-white/5 border-dashed">No guest found in CRM.</p>}
                         {modalCrmResults.map((c: any) => (
-                          <div key={c.mobileNumber} onClick={() => { setFormData({...formData, firstName: c.firstName, lastName: c.lastName, mobileNumber: c.mobileNumber}); setIsSearchCrmMode(false); setCrmAddSearchQuery(""); }} className="p-3 bg-white/5 hover:bg-indigo-500/20 border border-white/10 hover:border-indigo-500/30 rounded-lg cursor-pointer flex justify-between items-center transition-all">
+                          <div key={c.mobileNumber} onClick={() => { setFormData({...formData, firstName: c.firstName, lastName: c.lastName, mobileNumber: c.mobileNumber}); setIsSearchCrmMode(false); setCrmAddSearchQuery(""); }} className="p-3 bg-white/[0.03] hover:bg-indigo-500/20 border border-white/5 hover:border-indigo-500/30 rounded-xl cursor-pointer flex justify-between items-center transition-all group">
                             <div>
-                              <p className="text-sm font-bold text-white capitalize">{c.firstName} {c.lastName}</p>
-                              <p className="text-xs text-neutral-400 font-mono">{c.mobileNumber}</p>
+                              <p className="text-sm font-bold text-white capitalize group-hover:text-indigo-300">{c.firstName} {c.lastName}</p>
+                              <p className="text-xs text-neutral-400 font-mono mt-0.5">{c.mobileNumber}</p>
                             </div>
-                            <PlusCircle className="w-4 h-4 text-indigo-400" />
+                            <div className="w-8 h-8 bg-indigo-500/10 rounded-full flex items-center justify-center group-hover:bg-indigo-500 transition-colors">
+                               <PlusCircle className="w-4 h-4 text-indigo-400 group-hover:text-black" />
+                            </div>
                           </div>
                         ))}
                       </div>
-                      <button type="button" onClick={() => setIsSearchCrmMode(false)} className="w-full py-2 text-xs text-neutral-400 hover:text-white mt-2">Cancel Search</button>
+                      <button type="button" onClick={() => setIsSearchCrmMode(false)} className="w-full py-3 border border-white/10 rounded-xl text-xs font-bold uppercase tracking-widest text-neutral-400 hover:text-white hover:bg-white/5 transition-all mt-2">Cancel Search</button>
                     </div>
                   ) : (
                     <>
-                      <div className="flex gap-2 mb-4 bg-black/60 p-1 rounded-xl border border-white/10 shadow-inner">
-                        <button type="button" onClick={() => setFormData({...formData, entryType: "Stag"})} className={`flex-1 py-2 rounded-lg text-[10px] uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-1 ${formData.entryType === "Stag" ? "bg-amber-500 text-black shadow-lg" : "text-neutral-500 hover:text-white"}`}><User className="w-3 h-3"/> Stag</button>
-                        <button type="button" onClick={() => setFormData({...formData, entryType: "Couple"})} className={`flex-1 py-2 rounded-lg text-[10px] uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-1 ${formData.entryType === "Couple" ? "bg-amber-500 text-black shadow-lg" : "text-neutral-500 hover:text-white"}`}><Heart className="w-3 h-3"/> Couple</button>
-                        <button type="button" onClick={() => setFormData({...formData, entryType: "Group"})} className={`flex-1 py-2 rounded-lg text-[10px] uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-1 ${formData.entryType === "Group" ? "bg-amber-500 text-black shadow-lg" : "text-neutral-500 hover:text-white"}`}><Users className="w-3 h-3"/> Group</button>
+                      <div className="flex gap-2 mb-4 bg-black/40 p-1.5 rounded-xl border border-white/5 shadow-inner">
+                        <button type="button" onClick={() => setFormData({...formData, entryType: "Stag"})} className={`flex-1 py-2.5 rounded-lg text-[10px] uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-1.5 ${formData.entryType === "Stag" ? "bg-amber-500 text-black shadow-lg" : "text-neutral-500 hover:text-white"}`}><User className="w-3 h-3"/> Stag</button>
+                        <button type="button" onClick={() => setFormData({...formData, entryType: "Couple"})} className={`flex-1 py-2.5 rounded-lg text-[10px] uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-1.5 ${formData.entryType === "Couple" ? "bg-amber-500 text-black shadow-lg" : "text-neutral-500 hover:text-white"}`}><Heart className="w-3 h-3"/> Couple</button>
+                        <button type="button" onClick={() => setFormData({...formData, entryType: "Group"})} className={`flex-1 py-2.5 rounded-lg text-[10px] uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-1.5 ${formData.entryType === "Group" ? "bg-amber-500 text-black shadow-lg" : "text-neutral-500 hover:text-white"}`}><Users className="w-3 h-3"/> Group</button>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <input required placeholder="First Name" className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 text-white" value={formData.firstName} onChange={(e) => setFormData({...formData, firstName: e.target.value})} />
-                        <input required placeholder="Last Name" className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 text-white" value={formData.lastName} onChange={(e) => setFormData({...formData, lastName: e.target.value})} />
+                        <input required placeholder="First Name" className="bg-black/50 border border-white/10 rounded-xl p-3.5 w-full text-sm outline-none focus:border-amber-500/50 text-white shadow-inner" value={formData.firstName} onChange={(e) => setFormData({...formData, firstName: e.target.value})} />
+                        <input required placeholder="Last Name" className="bg-black/50 border border-white/10 rounded-xl p-3.5 w-full text-sm outline-none focus:border-amber-500/50 text-white shadow-inner" value={formData.lastName} onChange={(e) => setFormData({...formData, lastName: e.target.value})} />
                       </div>
-                      <input required placeholder="Mobile Number" className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 text-white" value={formData.mobileNumber} onChange={(e) => setFormData({...formData, mobileNumber: e.target.value})} />
+                      <input required placeholder="Mobile Number" className="bg-black/50 border border-white/10 rounded-xl p-3.5 w-full text-sm outline-none focus:border-amber-500/50 text-white shadow-inner" value={formData.mobileNumber} onChange={(e) => setFormData({...formData, mobileNumber: e.target.value})} />
 
                       <AnimatePresence>
                         {formData.entryType === "Couple" && !isEditing && (
-                          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-4 pt-2 overflow-hidden">
+                          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-4 pt-3 overflow-hidden">
                             <p className="text-[10px] text-amber-500 uppercase tracking-widest font-bold">Partner Details</p>
                             <div className="grid grid-cols-2 gap-4">
-                              <input type="text" required={formData.entryType === "Couple"} value={formData.partnerFirstName} onChange={(e) => setFormData({...formData, partnerFirstName: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-3 text-sm text-white outline-none focus:border-amber-500/50" placeholder="First Name" />
-                              <input type="text" required={formData.entryType === "Couple"} value={formData.partnerLastName} onChange={(e) => setFormData({...formData, partnerLastName: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-3 text-sm text-white outline-none focus:border-amber-500/50" placeholder="Last Name" />
+                              <input type="text" required={formData.entryType === "Couple"} value={formData.partnerFirstName} onChange={(e) => setFormData({...formData, partnerFirstName: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl px-3.5 py-3.5 text-sm text-white outline-none focus:border-amber-500/50 shadow-inner" placeholder="First Name" />
+                              <input type="text" required={formData.entryType === "Couple"} value={formData.partnerLastName} onChange={(e) => setFormData({...formData, partnerLastName: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl px-3.5 py-3.5 text-sm text-white outline-none focus:border-amber-500/50 shadow-inner" placeholder="Last Name" />
                             </div>
-                            <input type="tel" maxLength={10} required={formData.entryType === "Couple"} value={formData.partnerMobile} onChange={(e) => setFormData({...formData, partnerMobile: e.target.value.replace(/[^0-9]/g, '')})} className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-3 text-sm text-white outline-none focus:border-amber-500/50" placeholder="Partner Mobile Number" />
+                            <input type="tel" maxLength={10} required={formData.entryType === "Couple"} value={formData.partnerMobile} onChange={(e) => setFormData({...formData, partnerMobile: e.target.value.replace(/[^0-9]/g, '')})} className="w-full bg-black/50 border border-white/10 rounded-xl px-3.5 py-3.5 text-sm text-white outline-none focus:border-amber-500/50 shadow-inner" placeholder="Partner Mobile Number" />
                           </motion.div>
                         )}
                       </AnimatePresence>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="text-xs text-neutral-400 ml-1">Amount (₹)</label>
-                          <input type="number" required className="bg-white/5 border border-white/10 rounded-lg p-3 w-full outline-none focus:border-white/30 mt-1 text-white" value={formData.amount} onChange={(e) => setFormData({...formData, amount: Number(e.target.value)})} />
+                          <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest ml-1 mb-1.5 block">Amount (₹)</label>
+                          <input type="number" required className="bg-black/50 border border-white/10 rounded-xl p-3.5 w-full text-sm outline-none focus:border-amber-500/50 text-white shadow-inner" value={formData.amount} onChange={(e) => setFormData({...formData, amount: Number(e.target.value)})} />
                         </div>
                         <div>
-                          <label className="text-xs text-neutral-400 ml-1">Status</label>
-                          <select className="bg-[#1a1a1a] border border-white/10 rounded-lg p-3 w-full outline-none mt-1 text-white" value={formData.rsvpStatus} onChange={(e) => setFormData({...formData, rsvpStatus: e.target.value})}>
+                          <label className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest ml-1 mb-1.5 block">Status</label>
+                          <select className="bg-black/80 border border-white/10 rounded-xl p-3.5 w-full text-sm outline-none focus:border-amber-500/50 text-white shadow-inner appearance-none" value={formData.rsvpStatus} onChange={(e) => setFormData({...formData, rsvpStatus: e.target.value})}>
                             <option value="Pending">Pending</option>
                             <option value="Need Verification">Need Verification</option>
                             <option value="Confirmed">Confirmed</option>
@@ -890,14 +998,15 @@ export default function AdminDashboard() {
                       </div>
 
                       {!isEditing && (
-                        <div className="pt-2 border-t border-white/10 mt-4">
-                          <button type="button" onClick={() => { setIsSearchCrmMode(true); fetchCrmData(); }} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium tracking-wide">
-                            <Database className="w-3 h-3" /> Want to add an already existing guest? Search CRM
+                        <div className="pt-3 border-t border-white/5 mt-5">
+                          <button type="button" onClick={() => { setIsSearchCrmMode(true); fetchCrmData(); }} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 font-bold uppercase tracking-widest transition-colors">
+                            <Database className="w-3.5 h-3.5" /> Import from Master CRM
                           </button>
                         </div>
                       )}
-                      <button disabled={isSubmitting} className="w-full bg-white text-neutral-950 py-3 rounded-lg font-medium hover:bg-neutral-200 mt-6 transition-colors shadow-lg">
-                        {isSubmitting ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : "Save Changes"}
+                      
+                      <button disabled={isSubmitting} className="w-full bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-black py-4 rounded-xl font-black uppercase tracking-widest mt-6 transition-all shadow-[0_10px_30px_rgba(245,158,11,0.2)] disabled:opacity-50">
+                        {isSubmitting ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : "Save Guest Record"}
                       </button>
                     </>
                   )}
@@ -913,45 +1022,45 @@ export default function AdminDashboard() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsVerifyModalOpen(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
             
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="z-10 w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl">
-              <GlassCard className="p-6 relative overflow-hidden flex flex-col items-center border-white/10 w-full">
-                <button onClick={() => setIsVerifyModalOpen(false)} className="absolute top-4 right-4 text-neutral-500 hover:text-white bg-black/50 p-2 rounded-full z-20"><X className="w-5 h-5"/></button>
-                <h2 className="text-lg font-medium mb-1 text-white tracking-wide text-center">Verify Payment Proof</h2>
-                <p className="text-sm text-neutral-400 mb-4 text-center">{selectedGuest.firstName} {selectedGuest.lastName} • Total: ₹{selectedGuest.amount}</p>
+              <GlassCard className="p-6 sm:p-8 relative overflow-hidden flex flex-col items-center border-white/10 w-full rounded-[2rem] bg-[#0a0a0a]">
+                <button onClick={() => setIsVerifyModalOpen(false)} className="absolute top-5 right-5 text-neutral-500 hover:text-white bg-white/5 p-2 rounded-full z-20 transition-colors"><X className="w-5 h-5"/></button>
+                <h2 className="text-xl font-bold mb-1 text-white tracking-wide text-center">Verify Payment Proof</h2>
+                <p className="text-sm text-neutral-400 mb-6 text-center">{selectedGuest.firstName} {selectedGuest.lastName} • Total: <strong className="text-white">₹{selectedGuest.amount}</strong></p>
                 
-                <div className="w-full text-left bg-white/5 p-4 rounded-xl mb-6 border border-white/10">
-                  <p className="text-xs text-amber-500 uppercase tracking-widest font-bold mb-2 flex items-center gap-2"><IndianRupee className="w-3 h-3"/> Payment Status</p>
-                  <div className="flex justify-between items-center mb-1">
-                     <span className="text-zinc-400 text-sm">Total Expected Value:</span>
-                     <span className="text-white font-mono font-bold">₹{selectedGuest.amount}</span>
+                <div className="w-full text-left bg-white/[0.02] p-5 rounded-2xl mb-6 border border-white/5">
+                  <p className="text-[10px] text-amber-500 uppercase tracking-widest font-bold mb-3 flex items-center gap-2"><IndianRupee className="w-3.5 h-3.5"/> Transaction Status</p>
+                  <div className="flex justify-between items-center mb-2 pb-3 border-b border-white/5">
+                     <span className="text-zinc-400 text-sm font-medium">Total Expected Value:</span>
+                     <span className="text-white font-mono font-bold text-lg">₹{selectedGuest.amount}</span>
                   </div>
                   
-                  <div className="w-full overflow-y-auto pr-1 space-y-3 mt-4">
+                  <div className="w-full overflow-y-auto pr-1 space-y-3 mt-4 max-h-[40vh] hide-scrollbar">
                     {selectedGuest.paymentHistory && selectedGuest.paymentHistory.length > 0 ? (
                       selectedGuest.paymentHistory.map((hist: any, i: number) => (
-                        <div key={i} className={`flex gap-3 sm:gap-4 items-center p-3 rounded-lg border ${hist.method === 'razorpay_auto' ? 'bg-blue-900/10 border-blue-500/20' : 'bg-black/40 border-white/5'}`}>
+                        <div key={i} className={`flex gap-3 sm:gap-4 items-center p-3 rounded-xl border ${hist.method === 'razorpay_auto' ? 'bg-blue-900/10 border-blue-500/20' : 'bg-black/40 border-white/5'}`}>
                            
                            {hist.method === 'razorpay_auto' ? (
-                             <div className="w-16 h-16 bg-blue-500/20 text-blue-400 rounded flex items-center justify-center border border-blue-500/30 flex-shrink-0">
+                             <div className="w-16 h-16 bg-blue-500/20 text-blue-400 rounded-lg flex items-center justify-center border border-blue-500/30 flex-shrink-0 shadow-inner">
                                <CreditCard className="w-6 h-6" />
                              </div>
                            ) : (
-                             <img src={hist.screenshot} className="w-16 h-16 object-cover rounded border border-white/20 flex-shrink-0" />
+                             <img src={hist.screenshot} className="w-16 h-16 object-cover rounded-lg border border-white/10 flex-shrink-0 shadow-sm" />
                            )}
                            
                            <div className="flex-1 min-w-0">
-                              <p className="text-xs text-zinc-500 truncate">{new Date(hist.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</p>
-                              <p className="text-sm text-green-400 font-mono font-bold mt-0.5">+ ₹{hist.amountPaid}</p>
-                              <p className="text-[10px] uppercase text-amber-500 mt-1 tracking-widest truncate">
-                                {hist.type} Pass {hist.method === 'razorpay_auto' && `• ID: ${hist.paymentId?.slice(-6) || 'Auto'}`}
+                              <p className="text-[10px] text-zinc-500 font-medium truncate mb-1">{new Date(hist.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                              <p className="text-sm text-emerald-400 font-mono font-bold">+ ₹{hist.amountPaid}</p>
+                              <p className="text-[10px] uppercase text-amber-500 mt-1 tracking-widest font-bold truncate">
+                                {hist.type} Pass {hist.method === 'razorpay_auto' && <span className="text-blue-400 ml-1">#{(hist.paymentId || '').slice(-6)}</span>}
                               </p>
                            </div>
                            
                            {hist.method !== 'razorpay_auto' && hist.screenshot && (
                              <button 
                                onClick={() => openBase64InNewTab(hist.screenshot)} 
-                               className="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded flex items-center gap-2 border border-white/10 transition-all whitespace-nowrap flex-shrink-0"
+                               className="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded-lg flex items-center gap-2 border border-white/10 transition-all whitespace-nowrap flex-shrink-0 font-bold tracking-wide"
                              >
-                                <ExternalLink className="w-3 h-3" /> <span className="hidden sm:inline">Full Image</span>
+                                <ExternalLink className="w-3 h-3" /> <span className="hidden sm:inline">View</span>
                              </button>
                            )}
                         </div>
@@ -959,22 +1068,22 @@ export default function AdminDashboard() {
                     ) : (
                       <div className="w-full">
                          {selectedGuest.screenshot ? (
-                            <div className="flex gap-3 sm:gap-4 items-center bg-black/40 p-3 rounded-lg border border-white/5">
-                               <img src={selectedGuest.screenshot} className="w-16 h-16 object-cover rounded border border-white/20 flex-shrink-0" />
+                            <div className="flex gap-3 sm:gap-4 items-center bg-black/40 p-3 rounded-xl border border-white/5">
+                               <img src={selectedGuest.screenshot} className="w-16 h-16 object-cover rounded-lg border border-white/10 flex-shrink-0 shadow-sm" />
                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs text-zinc-500">Legacy Payment</p>
-                                  <p className="text-sm text-green-400 font-mono font-bold">₹{selectedGuest.amount}</p>
-                                  <p className="text-[10px] uppercase text-amber-500 mt-1 tracking-widest">{selectedGuest.entryType} Pass</p>
+                                  <p className="text-[10px] text-zinc-500 font-medium mb-1">Legacy Payment</p>
+                                  <p className="text-sm text-emerald-400 font-mono font-bold">₹{selectedGuest.amount}</p>
+                                  <p className="text-[10px] uppercase text-amber-500 mt-1 tracking-widest font-bold">{selectedGuest.entryType} Pass</p>
                                </div>
                                <button 
                                  onClick={() => openBase64InNewTab(selectedGuest.screenshot)} 
-                                 className="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded flex items-center gap-2 border border-white/10 transition-all whitespace-nowrap flex-shrink-0"
+                                 className="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded-lg flex items-center gap-2 border border-white/10 transition-all whitespace-nowrap flex-shrink-0 font-bold tracking-wide"
                                >
-                                  <ExternalLink className="w-3 h-3" /> <span className="hidden sm:inline">Full Image</span>
+                                  <ExternalLink className="w-3 h-3" /> <span className="hidden sm:inline">View</span>
                                </button>
                             </div>
                          ) : (
-                           <p className="text-neutral-500 font-light italic text-sm text-center py-4">No payment record or screenshot provided.</p>
+                           <p className="text-neutral-500 font-light italic text-sm text-center py-6 bg-black/20 rounded-xl border border-white/5 border-dashed">No payment record or screenshot provided.</p>
                          )}
                       </div>
                     )}
@@ -982,14 +1091,37 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3 w-full mt-auto">
-                  <button onClick={() => handleVerifyAction('Failed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-red-500/10 text-red-400 border border-red-500/20 py-3 rounded-lg hover:bg-red-500/20 transition-all font-bold tracking-wide">Mark as Failed</button>
-                  <button onClick={() => handleVerifyAction('Confirmed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-green-500/10 text-green-400 border border-green-500/20 py-3 rounded-lg hover:bg-green-500/20 transition-all font-bold tracking-wide">Approve & Confirm</button>
+                  <button onClick={() => handleVerifyAction('Failed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-red-500/10 text-red-400 border border-red-500/20 py-4 rounded-xl hover:bg-red-500 hover:text-white transition-all font-bold uppercase tracking-widest text-sm">Reject</button>
+                  <button onClick={() => handleVerifyAction('Confirmed')} disabled={isUpdatingStatus} className="flex-1 w-full bg-green-500/10 text-green-400 border border-green-500/20 py-4 rounded-xl hover:bg-green-500 hover:text-white transition-all font-bold uppercase tracking-widest text-sm shadow-[0_0_15px_rgba(34,197,94,0.1)] hover:shadow-none">Approve</button>
                 </div>
               </GlassCard>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      <div className="fixed -top-[9999px] -left-[9999px] no-print">
+        {downloadingGuest && (
+          <div id="admin-concert-ticket-export" className="flex w-[800px] h-[300px] bg-neutral-950 text-white font-sans overflow-hidden border border-amber-500/30 rounded-xl relative shadow-2xl">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-black to-black opacity-80"></div>
+            <div className="w-[580px] p-8 flex flex-col justify-between relative z-10 border-r-2 border-dashed border-neutral-700">
+               <div><h3 className="text-amber-500 tracking-[0.3em] uppercase text-xs font-bold mb-2">VIP ADMISSION</h3><h1 className="text-4xl font-black uppercase tracking-wider text-white drop-shadow-md">{settings.mainTitle || "THE INFINITY EVENT"}</h1><p className="text-neutral-400 mt-1 text-lg italic font-serif">{settings.mainHeadline || "Exclusive Access Only"}</p></div>
+               <div><p className="text-neutral-500 text-xs uppercase tracking-widest mb-1">Admit One</p><h2 className="text-3xl font-bold uppercase tracking-wide text-white">{downloadingGuest.firstName} {downloadingGuest.lastName}</h2></div>
+               <div className="flex gap-10 border-t border-neutral-800 pt-5 mt-2">
+                  <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Date</p><p className="font-bold text-white tracking-wide">{settings.eventDate || "TBA"}</p></div>
+                  <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Time</p><p className="font-bold text-white tracking-wide">{settings.eventTime || "TBA"}</p></div>
+                  {downloadingGuest.tableId && <div><p className="text-amber-500 text-xs uppercase tracking-wider mb-1">VIP Table</p><p className="font-bold text-amber-400 tracking-wide">{tables.find((t: any) => t.id === downloadingGuest.tableId)?.tableName || "Reserved"}</p></div>}
+               </div>
+            </div>
+            <div className="w-[220px] bg-amber-500/5 p-6 flex flex-col items-center justify-center relative z-10">
+               <p className="text-amber-500 text-sm font-bold tracking-[0.2em] mb-4 text-center">SCAN AT GATE</p>
+               <div className="bg-white p-2 rounded-xl mb-4 shadow-[0_0_15px_rgba(251,191,36,0.2)]"><QRCodeSVG value={downloadingGuest.entryCode || "N/A"} size={100} bgColor={"#ffffff"} fgColor={"#000000"} level={"H"} /></div>
+               <p className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1 text-center">Entry Code</p>
+               <p className="text-xl font-mono font-bold text-white tracking-[0.1em] text-center">{downloadingGuest.entryCode || "N/A"}</p>
+            </div>
+          </div>
+        )}
+      </div>
     </main>
   );
 }
