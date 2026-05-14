@@ -649,7 +649,7 @@ export default function AdminDashboard() {
              <div className="bg-red-500/20 p-2.5 rounded-full flex-shrink-0"><Lock className="w-5 h-5 text-red-400" /></div>
              <div>
                 <h3 className="text-red-400 font-bold text-sm sm:text-base uppercase tracking-wider">Event Locked</h3>
-                <p className="text-neutral-400 text-xs sm:text-sm mt-1 leading-relaxed">This event commenced over 18 hours ago and is now permanently locked. You can only view and export the data.</p>
+                <p className="text-neutral-400 text-xs sm:text-sm mt-1 leading-relaxed">This event is now permanently locked. You can only view and export the data.</p>
              </div>
           </motion.div>
         )}

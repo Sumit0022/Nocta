@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Crown, Users, ArrowRight, UserPlus, Loader2, User, Sparkles, CheckCircle2, Phone, Heart } from "lucide-react";
 import GlassCard from "@/components/atoms/GlassCard";
+import { toast } from "sonner";
 
 function TableBookingContent() {
   const router = useRouter();
@@ -30,6 +31,7 @@ function TableBookingContent() {
   const [tables, setTables] = useState<any[]>([]);
   const [selectedTable, setSelectedTable] = useState<any>(null);
   const [subOrdinates, setSubOrdinates] = useState<{firstName: string, lastName: string, phone: string}[]>([]);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     if(!eventId) return;
@@ -70,14 +72,49 @@ function TableBookingContent() {
     setSubOrdinates(newSubs);
   };
 
-  const proceedToPayment = () => {
+  const proceedToPayment = async () => {
     if (entryType === "Group" && !selectedTable) {
-      return alert("Groups must reserve a VIP table to proceed. General Entry is not available for Group selection.");
+      return toast.error("Groups must reserve a VIP table to proceed. General Entry is not available for Group selection.");
     }
 
     if (selectedTable) {
       const incomplete = subOrdinates.some(sub => !sub.firstName || !sub.lastName || !sub.phone);
-      if (incomplete) return alert("Please fill complete details (First & Last Name) for all Sub-ordinates to issue their passes.");
+      if (incomplete) return toast.error("Please fill complete details (First & Last Name) for all Guests to issue their passes.");
+
+      // 🚀 FRONTEND VALIDATION: Prevent duplicate numbers within the same form
+      const phones = subOrdinates.map(s => s.phone);
+      if (phones.includes(mobile)) return toast.error("A guest cannot have the same mobile number as the primary booker.");
+      const uniquePhones = new Set(phones);
+      if (uniquePhones.size !== phones.length) return toast.error("Duplicate mobile numbers found among guests.");
+
+      setIsVerifying(true);
+
+      // 🚀 BACKEND VALIDATION: Verify each sub-ordinate (Pax) against the database
+      try {
+        for (let i = 0; i < subOrdinates.length; i++) {
+          const sub = subOrdinates[i];
+          const pRes = await fetch("/api/guest/verify", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ firstName: sub.firstName, lastName: sub.lastName, mobileNumber: sub.phone, eventId }),
+          });
+          const pData = await pRes.json();
+          const pError = (pData.error || pData.message || "").toLowerCase();
+          const pIsNotFound = pRes.status === 404 || pError.includes("not found");
+
+          // If backend throws an error and it's NOT a "guest not found" (meaning the number is locked to a different name)
+          if (!pRes.ok && !pIsNotFound) {
+            toast.error(`Guest ${i + 1} Error: ${pData.error || pData.message}`);
+            setIsVerifying(false);
+            return; // Block execution
+          }
+        }
+      } catch (err) {
+        toast.error("Network error while verifying guests. Please try again.");
+        setIsVerifying(false);
+        return;
+      }
+
+      setIsVerifying(false);
       localStorage.setItem("pendingTable", JSON.stringify({ table: selectedTable, subOrdinates }));
     } else {
       localStorage.removeItem("pendingTable");
@@ -93,7 +130,7 @@ function TableBookingContent() {
   };
 
   return (
-    <div className="max-w-4xl w-full mx-auto pb-20">
+    <div className="max-w-5xl w-full mx-auto pb-20">
       
       {/* 🚀 PREMIUM HERO SECTION */}
       <div className="text-center mb-12 relative z-10 mt-6">
@@ -170,7 +207,7 @@ function TableBookingContent() {
         })}
       </div>
 
-      {/* 🚀 THE PREMIUM GUEST LIST FORM */}
+      {/* 🚀 THE PREMIUM GUEST LIST FORM - OPTIMIZED FOR DESKTOP */}
       <AnimatePresence>
         {selectedTable && (
           <motion.div 
@@ -203,7 +240,6 @@ function TableBookingContent() {
                     transition={{ delay: 0.1 * idx }}
                     className="relative pl-6 md:pl-10 border-l border-white/10 hover:border-amber-500/50 transition-colors duration-300"
                   >
-                    {/* 🚀 FIXED: All elements properly wrapped inside motion.div */}
                     <div className="absolute -left-[16px] top-0 bg-[#0a0a0a] border border-white/20 text-zinc-500 text-xs font-mono font-bold w-8 h-8 rounded-full flex items-center justify-center shadow-lg">
                       {String(idx + 1).padStart(2, '0')}
                     </div>
@@ -219,7 +255,8 @@ function TableBookingContent() {
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* 🚀 UI OPTIMIZATION: 3-Column Grid for Desktop, Stacked for Mobile */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="relative group">
                         <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                           <UserPlus className="w-4 h-4 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
@@ -246,7 +283,7 @@ function TableBookingContent() {
                         />
                       </div>
 
-                      <div className="relative group md:col-span-2">
+                      <div className="relative group">
                         <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none gap-2">
                           <Phone className="w-4 h-4 text-zinc-500 group-focus-within:text-amber-500 transition-colors" />
                           <span className="text-zinc-500 text-sm font-medium border-r border-white/10 pr-2">+91</span>
@@ -272,15 +309,17 @@ function TableBookingContent() {
       <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10 pt-4">
         <button 
           onClick={proceedToPayment} 
-          className="w-full sm:w-auto min-w-[280px] bg-gradient-to-r from-amber-500 to-yellow-400 text-black py-4 px-8 rounded-2xl font-black uppercase tracking-widest hover:from-amber-400 hover:to-yellow-300 active:scale-95 transition-all duration-300 flex justify-center items-center gap-3 shadow-[0_10px_40px_rgba(245,158,11,0.3)] hover:shadow-[0_15px_50px_rgba(245,158,11,0.5)]"
+          disabled={isVerifying}
+          className="w-full sm:w-auto min-w-[280px] bg-gradient-to-r from-amber-500 to-yellow-400 text-black py-4 px-8 rounded-2xl font-black uppercase tracking-widest hover:from-amber-400 hover:to-yellow-300 active:scale-95 transition-all duration-300 flex justify-center items-center gap-3 shadow-[0_10px_40px_rgba(245,158,11,0.3)] hover:shadow-[0_15px_50px_rgba(245,158,11,0.5)] disabled:opacity-50"
         >
-          <Sparkles className="w-5 h-5" /> Proceed to Payment <ArrowRight className="w-5 h-5" />
+          {isVerifying ? <Loader2 className="w-5 h-5 animate-spin text-black" /> : <><Sparkles className="w-5 h-5" /> Proceed to Payment <ArrowRight className="w-5 h-5" /></>}
         </button>
         
         {!selectedTable && entryType !== "Group" && (
           <button 
             onClick={proceedToPayment} 
-            className="w-full sm:w-auto min-w-[280px] bg-white/[0.05] border border-white/10 text-zinc-300 py-4 px-8 rounded-2xl font-bold uppercase tracking-widest hover:bg-white/10 hover:text-white active:scale-95 transition-all duration-300 flex justify-center items-center backdrop-blur-sm"
+            disabled={isVerifying}
+            className="w-full sm:w-auto min-w-[280px] bg-white/[0.05] border border-white/10 text-zinc-300 py-4 px-8 rounded-2xl font-bold uppercase tracking-widest hover:bg-white/10 hover:text-white active:scale-95 transition-all duration-300 flex justify-center items-center backdrop-blur-sm disabled:opacity-50"
           >
             Skip, General Entry
           </button>
