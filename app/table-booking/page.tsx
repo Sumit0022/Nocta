@@ -9,6 +9,9 @@ import { Crown, Users, ArrowRight, UserPlus, Loader2, User, Sparkles, CheckCircl
 import GlassCard from "@/components/atoms/GlassCard";
 import { toast } from "sonner";
 
+import { db } from "@/lib/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore/lite";
+
 function TableBookingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -37,27 +40,34 @@ function TableBookingContent() {
   const [menuItems, setMenuItems] = useState<any[]>([]);
   const [cart, setCart] = useState<{ [itemName: string]: number }>({});
   
-  // 🚀 NEW: State for Category Selection
   const [activeCategory, setActiveCategory] = useState<string>("All");
 
   useEffect(() => {
     if(!eventId) return;
     const fetchData = async () => {
       try {
-        const resTables = await fetch(`/api/admin/tables?eventId=${eventId}`);
-        const resultTables = await resTables.json();
-        if (resultTables.success) setTables(resultTables.data.filter((t: any) => t.status === "Available"));
+        const tablesQuery = query(collection(db, "tables"), where("eventId", "==", eventId));
+        const tablesSnapshot = await getDocs(tablesQuery);
+        const fetchedTables = tablesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setTables(fetchedTables.filter((t: any) => t.status === "Available"));
 
-        const resSettings = await fetch(`/api/admin/settings`);
-        const resultSettings = await resSettings.json();
-        if (resultSettings.success && Array.isArray(resultSettings.data)) {
-          const currentEvent = resultSettings.data.find((e: any) => e.eventId === eventId);
-          if (currentEvent && currentEvent.menuItems) {
-            setMenuItems(currentEvent.menuItems);
-          }
+        const eventsSnapshot = await getDocs(collection(db, "events"));
+        const fetchedEvents = eventsSnapshot.docs.map(doc => ({
+          eventId: doc.id,
+          ...doc.data()
+        }));
+        
+        // 🚀 THE FIX: TypeScript error solved using 'any'
+        const currentEvent: any = fetchedEvents.find((e: any) => e.eventId === eventId);
+        
+        if (currentEvent && currentEvent.menuItems) {
+          setMenuItems(currentEvent.menuItems);
         }
       } catch (e) {
-        console.error("Failed to fetch data:", e);
+        console.error("Failed to fetch data directly from Firebase:", e);
       }
     };
     fetchData();
@@ -166,7 +176,6 @@ function TableBookingContent() {
   const finalAmountToPay = Math.max(minSpend, cartTotal);
   const progressPercent = Math.min(100, (cartTotal / minSpend) * 100) || 0;
 
-  // 🚀 UNIQUE CATEGORIES FOR TAB MENU
   const menuCategories = useMemo(() => {
     const categories = new Set(menuItems.map(item => item.category || "Other"));
     return ["All", ...Array.from(categories)];
@@ -201,7 +210,6 @@ function TableBookingContent() {
 
   return (
     <div className="max-w-5xl w-full mx-auto pb-20">
-      
       <AnimatePresence mode="wait">
         {step === 1 && (
           <motion.div key="step1" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="w-full">
@@ -346,7 +354,6 @@ function TableBookingContent() {
         )}
       </AnimatePresence>
 
-      {/* 🚀 STEP 2: VIP PRE-ORDER MENU */}
       <AnimatePresence mode="wait">
         {step === 2 && (
           <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="w-full max-w-4xl mx-auto">
@@ -381,7 +388,6 @@ function TableBookingContent() {
               {cartTotal < minSpend && <p className="text-xs text-amber-500/70 font-medium mt-3 text-center">Add more items to consume your table's minimum spend limit.</p>}
             </GlassCard>
 
-            {/* 🚀 CATEGORY TABS RENDERER */}
             <div className="flex overflow-x-auto gap-3 mb-6 pb-2 hide-scrollbar w-full scroll-smooth">
               {menuCategories.map((category) => (
                 <button
@@ -398,7 +404,6 @@ function TableBookingContent() {
               ))}
             </div>
 
-            {/* 🚀 FILTERED MENU ITEMS GRID */}
             <motion.div layout className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-12">
               <AnimatePresence mode="popLayout">
                 {menuItems
