@@ -60,7 +60,6 @@ function TableBookingContent() {
           ...doc.data()
         }));
         
-        // 🚀 THE FIX: TypeScript error solved using 'any'
         const currentEvent: any = fetchedEvents.find((e: any) => e.eventId === eventId);
         
         if (currentEvent && currentEvent.menuItems) {
@@ -181,6 +180,7 @@ function TableBookingContent() {
     return ["All", ...Array.from(categories)];
   }, [menuItems]);
 
+  // 🚀 THE ULTIMATE FIX: Fail-proof navigation logic
   const proceedToCheckout = () => {
     if (selectedTable) {
       const cartItemsArray = Object.entries(cart).map(([name, qty]) => {
@@ -188,28 +188,49 @@ function TableBookingContent() {
         return { name, quantity: qty, price: itemObj?.price || 0 };
       });
 
-      localStorage.setItem("pendingTable", JSON.stringify({ 
-        table: selectedTable, 
-        subOrdinates, 
-        cart: cartItemsArray,
-        cartTotal,
-        finalAmount: finalAmountToPay
-      }));
+      // 🛡️ Wrapping localStorage in try-catch so it NEVER blocks execution if it fails
+      try {
+        localStorage.setItem("pendingTable", JSON.stringify({ 
+          table: selectedTable, 
+          subOrdinates, 
+          cart: cartItemsArray,
+          cartTotal,
+          finalAmount: finalAmountToPay
+        }));
+      } catch (err) {
+        console.warn("Could not save to LocalStorage:", err);
+      }
     } else {
-      localStorage.removeItem("pendingTable");
+      try { localStorage.removeItem("pendingTable"); } catch (err) {}
     }
     
-    const queryParams = new URLSearchParams({
-      firstName, lastName, mobile, eventId, guestId, entryType,
-      ...(entryType === "Couple" && !selectedTable && { partnerFirstName, partnerLastName, partnerMobile }),
-      ...(isUpgrade && { isUpgrade: "true", amountPaid }) 
-    }).toString();
+    // 🛡️ Explicit parameter appending to avoid any object-iteration errors
+    const params = new URLSearchParams();
+    if (firstName) params.append("firstName", firstName);
+    if (lastName) params.append("lastName", lastName);
+    if (mobile) params.append("mobile", mobile);
+    if (eventId) params.append("eventId", eventId);
+    if (guestId) params.append("guestId", guestId);
+    if (entryType) params.append("entryType", entryType);
+    
+    if (entryType === "Couple" && !selectedTable) {
+      if (partnerFirstName) params.append("partnerFirstName", partnerFirstName);
+      if (partnerLastName) params.append("partnerLastName", partnerLastName);
+      if (partnerMobile) params.append("partnerMobile", partnerMobile);
+    }
+    
+    if (isUpgrade) {
+      params.append("isUpgrade", "true");
+      if (amountPaid) params.append("amountPaid", amountPaid);
+    }
 
-    router.push(`/payment?${queryParams}`);
+    // Always push successfully!
+    router.push(`/payment?${params.toString()}`);
   };
 
   return (
     <div className="max-w-5xl w-full mx-auto pb-20">
+      
       <AnimatePresence mode="wait">
         {step === 1 && (
           <motion.div key="step1" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="w-full">
@@ -341,11 +362,12 @@ function TableBookingContent() {
             </AnimatePresence>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10 pt-4">
-              <button onClick={handleProceedToMenu} disabled={isVerifying} className="w-full sm:w-auto min-w-[280px] bg-gradient-to-r from-amber-500 to-yellow-400 text-black py-4 px-8 rounded-2xl font-black uppercase tracking-widest hover:from-amber-400 hover:to-yellow-300 active:scale-95 transition-all duration-300 flex justify-center items-center gap-3 shadow-[0_10px_40px_rgba(245,158,11,0.3)] hover:shadow-[0_15px_50px_rgba(245,158,11,0.5)] disabled:opacity-50">
+              {/* 🛡️ Explicit type="button" added to block implicit page reload */}
+              <button type="button" onClick={handleProceedToMenu} disabled={isVerifying} className="w-full sm:w-auto min-w-[280px] bg-gradient-to-r from-amber-500 to-yellow-400 text-black py-4 px-8 rounded-2xl font-black uppercase tracking-widest hover:from-amber-400 hover:to-yellow-300 active:scale-95 transition-all duration-300 flex justify-center items-center gap-3 shadow-[0_10px_40px_rgba(245,158,11,0.3)] hover:shadow-[0_15px_50px_rgba(245,158,11,0.5)] disabled:opacity-50">
                 {isVerifying ? <Loader2 className="w-5 h-5 animate-spin text-black" /> : <><Sparkles className="w-5 h-5" /> Next Step <ArrowRight className="w-5 h-5" /></>}
               </button>
               {!selectedTable && entryType !== "Group" && (
-                <button onClick={handleProceedToMenu} disabled={isVerifying} className="w-full sm:w-auto min-w-[280px] bg-white/[0.05] border border-white/10 text-zinc-300 py-4 px-8 rounded-2xl font-bold uppercase tracking-widest hover:bg-white/10 hover:text-white active:scale-95 transition-all duration-300 flex justify-center items-center backdrop-blur-sm disabled:opacity-50">
+                <button type="button" onClick={handleProceedToMenu} disabled={isVerifying} className="w-full sm:w-auto min-w-[280px] bg-white/[0.05] border border-white/10 text-zinc-300 py-4 px-8 rounded-2xl font-bold uppercase tracking-widest hover:bg-white/10 hover:text-white active:scale-95 transition-all duration-300 flex justify-center items-center backdrop-blur-sm disabled:opacity-50">
                   Skip, General Entry
                 </button>
               )}
@@ -358,7 +380,7 @@ function TableBookingContent() {
         {step === 2 && (
           <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="w-full max-w-4xl mx-auto">
             
-            <button onClick={() => setStep(1)} className="flex items-center gap-2 text-neutral-400 hover:text-white mb-8 transition-colors text-sm font-bold tracking-widest uppercase">
+            <button type="button" onClick={() => setStep(1)} className="flex items-center gap-2 text-neutral-400 hover:text-white mb-8 transition-colors text-sm font-bold tracking-widest uppercase">
               <ChevronLeft className="w-4 h-4" /> Back to Table Info
             </button>
 
@@ -392,6 +414,7 @@ function TableBookingContent() {
               {menuCategories.map((category) => (
                 <button
                   key={category}
+                  type="button"
                   onClick={() => setActiveCategory(category)}
                   className={`px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all border ${
                     activeCategory === category
@@ -425,9 +448,9 @@ function TableBookingContent() {
                         </div>
                         
                         <div className="flex items-center gap-3 bg-black/40 rounded-xl border border-white/10 p-1 shadow-inner shrink-0">
-                          <button onClick={() => updateCart(item.name, -1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"><Minus className="w-4 h-4"/></button>
+                          <button type="button" onClick={() => updateCart(item.name, -1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"><Minus className="w-4 h-4"/></button>
                           <span className="w-4 text-center font-bold text-white font-mono">{cart[item.name] || 0}</span>
-                          <button onClick={() => updateCart(item.name, 1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"><Plus className="w-4 h-4"/></button>
+                          <button type="button" onClick={() => updateCart(item.name, 1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"><Plus className="w-4 h-4"/></button>
                         </div>
                       </GlassCard>
                     </motion.div>
@@ -443,6 +466,7 @@ function TableBookingContent() {
                 <p className="text-[10px] text-neutral-500 mt-1">Includes table minimum and extra add-ons.</p>
               </div>
               <button 
+                type="button"
                 onClick={proceedToCheckout} 
                 className="w-full sm:w-auto bg-white text-black py-4 px-10 rounded-xl font-black uppercase tracking-widest hover:bg-gray-200 active:scale-95 transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center justify-center gap-2"
               >
