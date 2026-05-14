@@ -8,7 +8,8 @@ export async function POST(req: Request) {
     const { 
       id, _id, firstName, lastName, mobileNumber, eventId: payloadEventId, 
       entryType, isUpgrade, previousAmount, amount, 
-      screenshot, tableId, isCaptain, subOrdinates, partnerDetails 
+      screenshot, tableId, isCaptain, subOrdinates, partnerDetails,
+      preOrders // 🚀 EXTRACTED PRE-ORDERS
     } = body;
 
     let guestId = id || _id;
@@ -48,6 +49,7 @@ export async function POST(req: Request) {
         rsvpStatus: "Need Verification", 
         screenshot: screenshot, // Primary display
         paymentHistory: [newPaymentRecord], // 🚀 HISTORY INITIATED
+        preOrders: preOrders || [], // 🍾 🚀 SAVING VIP MENU ITEMS
         createdAt: new Date().toISOString(),
         source: "public_registration"
       });
@@ -78,9 +80,14 @@ export async function POST(req: Request) {
       // Append the new payment to the history
       existingHistory.push(newPaymentRecord);
       
+      // 🚀 MIGRATING OR APPENDING PRE-ORDERS
+      const existingPreOrders = captainDoc.data().preOrders || [];
+      const updatedPreOrders = preOrders && preOrders.length > 0 ? preOrders : existingPreOrders;
+
       const updateData: any = {
         screenshot: screenshot, // Keep latest as primary for list view
         paymentHistory: existingHistory, // 🚀 UPDATED HISTORY SAVED
+        preOrders: updatedPreOrders, // 🍾 🚀 SAVING VIP MENU ITEMS
         rsvpStatus: "Need Verification", 
         isCaptain: isCaptain || false,
         entryType: entryType || captainDoc.data().entryType

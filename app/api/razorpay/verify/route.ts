@@ -11,7 +11,8 @@ export async function POST(req: Request) {
     const { 
       id, _id, firstName, lastName, mobileNumber, eventId: payloadEventId, 
       entryType, isUpgrade, previousAmount, amount, 
-      tableId, isCaptain, subOrdinates, partnerDetails 
+      tableId, isCaptain, subOrdinates, partnerDetails,
+      preOrders // 🚀 EXTRACTED PRE-ORDERS
     } = payload;
 
     let finalEventId = payloadEventId || "";
@@ -62,6 +63,7 @@ export async function POST(req: Request) {
         rsvpStatus: "Confirmed", 
         entryCode: newEntryCode, 
         paymentHistory: [newPaymentRecord], 
+        preOrders: preOrders || [], // 🍾 🚀 SAVING VIP MENU ITEMS
         createdAt: new Date().toISOString(), source: "public_registration_auto"
       });
       guestId = newGuestDoc.id; 
@@ -80,8 +82,13 @@ export async function POST(req: Request) {
       
       existingHistory.push(newPaymentRecord);
       
+      // 🚀 MIGRATING OR APPENDING PRE-ORDERS
+      const existingPreOrders = captainData.preOrders || [];
+      const updatedPreOrders = preOrders && preOrders.length > 0 ? preOrders : existingPreOrders;
+
       const updateData: any = {
         paymentHistory: existingHistory, 
+        preOrders: updatedPreOrders, // 🍾 🚀 SAVING VIP MENU ITEMS
         rsvpStatus: "Confirmed", // 🟢 Overwrites "Failed" to "Confirmed"
         isCaptain: isCaptain || false, entryType: entryType || captainData.entryType
       };

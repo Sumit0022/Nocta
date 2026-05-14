@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import GlassCard from "@/components/atoms/GlassCard";
-import { QrCode, Copy, CheckCircle2, Loader2, UploadCloud, Crown, Users, ArrowRight, CreditCard, ShieldCheck, AlertCircle } from "lucide-react";
+import { QrCode, Copy, CheckCircle2, Loader2, UploadCloud, Crown, Users, ArrowRight, CreditCard, ShieldCheck, AlertCircle, ShoppingCart, GlassWater } from "lucide-react";
 import { toast } from "sonner"; 
 
 function PaymentContent() {
@@ -18,6 +18,7 @@ function PaymentContent() {
   
   const [paymentError, setPaymentError] = useState("");
 
+  // 🚀 UPDATED: TableBooking now contains cart & finalAmount if present
   const [tableBooking, setTableBooking] = useState<any>(null);
   const [upiId, setUpiId] = useState("Loading...");
   const [qrCode, setQrCode] = useState("");
@@ -33,7 +34,6 @@ function PaymentContent() {
   const [mobileNumber, setMobileNumber] = useState("");
   const [partnerData, setPartnerData] = useState<any>(null);
 
-  // 🚀 THE FIX: Initial State is now "loading" to prevent UI flicker
   const [paymentMode, setPaymentMode] = useState("loading");
 
   useEffect(() => {
@@ -86,14 +86,13 @@ function PaymentContent() {
             return;
           }
         }
-        // Fallback if event not found
         setPaymentMode("manual");
       } catch (e) {
-        // Fallback on error
         setPaymentMode("manual");
       }
     };
 
+    // 🚀 NEW: Safely parsing pendingTable including Cart Data
     const savedTable = localStorage.getItem("pendingTable");
     if (savedTable) {
       try { setTableBooking(JSON.parse(savedTable)); } catch (error) { console.error(error); }
@@ -145,9 +144,10 @@ function PaymentContent() {
     }
   };
 
+  // 🚀 FIXED CALCULATION: Now overrides with finalAmount if Cart exists
   let targetAmount = baseAmount; 
   if (tableBooking) {
-    targetAmount = Number(tableBooking.table.minSpend);
+    targetAmount = tableBooking.finalAmount || Number(tableBooking.table.minSpend);
   } else {
     if (entryType === "Couple" && eventPrices.couple > 0) targetAmount = eventPrices.couple;
     else if (entryType === "Stag" && eventPrices.stag > 0) targetAmount = eventPrices.stag;
@@ -161,11 +161,13 @@ function PaymentContent() {
     setPaymentError("");
     
     try {
+      // 🚀 INJECT CART DATA INTO PAYLOAD
       const payload = { 
         id: guestId, firstName, lastName, mobileNumber, eventId, entryType, isUpgrade, 
         previousAmount: previouslyPaid, amount: finalAmountToPay, screenshot, 
         tableId: tableBooking?.table?.id || null, isCaptain: !!tableBooking || entryType === "Group", 
-        subOrdinates: tableBooking?.subOrdinates || [], partnerDetails: partnerData
+        subOrdinates: tableBooking?.subOrdinates || [], partnerDetails: partnerData,
+        preOrders: tableBooking?.cart || [] // NEW FIELD
       };
 
       const res = await fetch("/api/guest/payment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -199,11 +201,13 @@ function PaymentContent() {
         return;
       }
 
+      // 🚀 INJECT CART DATA INTO PAYLOAD
       const payload = { 
         id: guestId, firstName, lastName, mobileNumber, eventId, entryType, isUpgrade, 
         previousAmount: previouslyPaid, amount: finalAmountToPay, 
         tableId: tableBooking?.table?.id || null, isCaptain: !!tableBooking || entryType === "Group", 
-        subOrdinates: tableBooking?.subOrdinates || [], partnerDetails: partnerData
+        subOrdinates: tableBooking?.subOrdinates || [], partnerDetails: partnerData,
+        preOrders: tableBooking?.cart || [] // NEW FIELD
       };
 
       const options = {
@@ -211,7 +215,7 @@ function PaymentContent() {
         amount: Math.round(finalAmountToPay * 100),
         currency: "INR",
         name: "Event Reservation",
-        description: `Pass: ${entryType}`,
+        description: tableBooking?.cart?.length > 0 ? `VIP Table & Add-ons` : `Pass: ${entryType}`,
         order_id: orderData.orderId,
         handler: async function (response: any) {
           toast.loading("Verifying your payment...");
@@ -276,7 +280,7 @@ function PaymentContent() {
   };
 
   return (
-    <div className="w-full max-w-md p-8 bg-black/40 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl">
+    <div className="w-full max-w-md p-6 sm:p-8 bg-black/40 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl">
       <div className="text-center mb-6">
         <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
           <QrCode className="w-8 h-8" />
@@ -296,8 +300,35 @@ function PaymentContent() {
         <div className="mb-6 bg-amber-500/5 border border-amber-500/20 rounded-xl p-5 text-left shadow-[0_0_20px_rgba(245,158,11,0.05)]">
           <h3 className="text-amber-500 text-sm font-bold uppercase tracking-widest mb-2 flex items-center gap-2"><Crown className="w-4 h-4"/> VIP Table: {tableBooking.table.tableName}</h3>
           <p className="text-zinc-300 text-sm mb-3 flex items-center gap-2 font-medium"><Users className="w-4 h-4 text-zinc-400"/> You (Captain) + {tableBooking.subOrdinates.length} Pax</p>
-          <div className="bg-amber-500/10 rounded-lg p-2 px-3 border border-amber-500/20 inline-block"><p className="text-[10px] text-amber-400 uppercase tracking-widest font-semibold">General Entry Waived</p></div>
-          <p className="text-xs text-zinc-500 mt-2">Paying only table minimum spend.</p>
+          <div className="flex justify-between items-end border-t border-white/10 pt-3">
+             <div>
+                <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-semibold mb-0.5">Table Minimum</p>
+                <p className="text-white font-mono font-medium">₹{tableBooking.table.minSpend}</p>
+             </div>
+             <div className="bg-amber-500/10 rounded-lg p-1.5 px-3 border border-amber-500/20"><p className="text-[10px] text-amber-400 uppercase tracking-widest font-bold">Entry Waived</p></div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚀 NEW: Sleek Cart Summary if Pre-orders exist */}
+      {tableBooking?.cart && tableBooking.cart.length > 0 && paymentMode !== "loading" && (
+        <div className="mb-6 bg-white/[0.03] border border-white/10 rounded-xl p-4 text-left shadow-inner">
+          <h3 className="text-white text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><ShoppingCart className="w-3.5 h-3.5 text-amber-500"/> Pre-Ordered Add-ons</h3>
+          <div className="space-y-2">
+            {tableBooking.cart.map((item: any, i: number) => (
+              <div key={i} className="flex justify-between items-center text-sm">
+                 <div className="flex items-center gap-2">
+                    <span className="text-neutral-500 font-mono text-xs">{item.quantity}x</span>
+                    <span className="text-neutral-300">{item.name}</span>
+                 </div>
+                 <span className="text-amber-400 font-mono text-xs">₹{item.price * item.quantity}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/5">
+            <span className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold">Add-on Total</span>
+            <span className="text-white font-mono font-bold text-sm">₹{tableBooking.cartTotal}</span>
+          </div>
         </div>
       )}
 
@@ -310,21 +341,22 @@ function PaymentContent() {
         </div>
       )}
 
-      {/* 🚀 THE FIX: Dynamic Loader vs Amount Display */}
       {paymentMode === "loading" ? (
         <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-6 text-center mb-6 flex justify-center items-center h-[90px]">
            <Loader2 className="w-6 h-6 animate-spin text-amber-500/50" />
         </div>
       ) : (
         <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-6 text-center mb-6 animate-in fade-in">
-          <p className="text-amber-500/70 text-sm uppercase tracking-widest mb-1">Total Due</p>
-          <h2 className="text-4xl font-bold text-white font-mono">₹{finalAmountToPay}</h2>
+          <p className="text-amber-500/70 text-sm uppercase tracking-widest mb-1 font-bold">Total Due</p>
+          <h2 className="text-4xl font-black text-white font-mono">₹{finalAmountToPay}</h2>
+          {tableBooking?.cart && tableBooking.cartTotal > Number(tableBooking.table.minSpend) && (
+            <p className="text-[10px] text-green-400 mt-2 font-bold uppercase tracking-widest">Includes Minimum Spend Overage</p>
+          )}
         </div>
       )}
 
       <div className="space-y-6">
         {paymentMode === "loading" ? (
-          // 🚀 THE FIX: Gateway Loading Skeleton
           <div className="py-12 flex flex-col items-center justify-center animate-pulse">
             <Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-4" />
             <p className="text-xs text-neutral-500 uppercase tracking-widest">Initializing Secure Gateway...</p>
@@ -343,7 +375,7 @@ function PaymentContent() {
             <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-white/20 rounded-lg cursor-pointer hover:bg-white/5 overflow-hidden relative transition-colors">
               {screenshot ? <img src={screenshot} className="absolute inset-0 w-full h-full object-cover opacity-60" /> : <UploadCloud className="w-8 h-8 text-neutral-400" />}
               <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-              {!screenshot && <span className="mt-2 text-xs text-zinc-500 uppercase tracking-widest">Upload Screenshot</span>}
+              {!screenshot && <span className="mt-2 text-xs text-zinc-500 uppercase tracking-widest font-bold">Upload Screenshot</span>}
             </label>
 
             <button onClick={handleManualSubmit} disabled={loading || (!screenshot && finalAmountToPay > 0)} className="w-full bg-amber-500 text-black py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-amber-600 active:scale-95 transition-all flex justify-center items-center">
@@ -357,7 +389,7 @@ function PaymentContent() {
               <p className="text-xs text-blue-300 font-medium">Your payment is secured by Razorpay Gateway. Verification is instant.</p>
             </div>
             
-            <button onClick={handleRazorpayPayment} disabled={loading} className="w-full bg-amber-500 text-black py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-amber-600 active:scale-95 transition-all flex justify-center items-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+            <button onClick={handleRazorpayPayment} disabled={loading} className="w-full bg-amber-500 text-black py-4 rounded-xl font-black uppercase tracking-widest hover:bg-amber-600 active:scale-95 transition-all flex justify-center items-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CreditCard className="w-5 h-5" /> {paymentError ? "Retry Payment" : "Pay Now Securely"}</>}
             </button>
           </div>

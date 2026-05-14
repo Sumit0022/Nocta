@@ -42,9 +42,13 @@ export default function AdminDashboard() {
 
   const [settings, setSettings] = useState({
     upiId: "", qrCode: "", mainTitle: "", mainHeadline: "", eventDate: "", eventTime: "", eventVenue: "", eventVibe: "", stagPrice: "", couplePrice: "",
-    paymentMode: "manual", razorpayKey: "", razorpaySecret: "" 
+    paymentMode: "manual", razorpayKey: "", razorpaySecret: "", menuItems: [] as { name: string, category: string, price: number }[]
   });
   const [savingSettings, setSavingSettings] = useState(false);
+
+  const [newMenuItemName, setNewMenuItemName] = useState("");
+  const [newMenuItemCategory, setNewMenuItemCategory] = useState("Spirits");
+  const [newMenuItemPrice, setNewMenuItemPrice] = useState("");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false); 
@@ -63,7 +67,6 @@ export default function AdminDashboard() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedResult, setScannedResult] = useState<any>(null);
 
-  // 🚀 LOGIC UNCHANGED: Bulletproof Date Parser
   const getEventStatus = (dateStr: string, timeStr: string) => {
     if (!dateStr) return "Active"; 
     
@@ -161,7 +164,8 @@ export default function AdminDashboard() {
             ...matchedEvent, 
             paymentMode: matchedEvent.paymentMode || "manual", 
             razorpayKey: matchedEvent.razorpayKey || globalKeys.key, 
-            razorpaySecret: matchedEvent.razorpaySecret || globalKeys.secret 
+            razorpaySecret: matchedEvent.razorpaySecret || globalKeys.secret,
+            menuItems: matchedEvent.menuItems || [] 
           });
         } else if (!activeEventId && result.data.length > 0) {
           const firstActive = result.data.find((e: any) => getEventStatus(e.eventDate, e.eventTime) === "Active");
@@ -173,7 +177,8 @@ export default function AdminDashboard() {
                ...targetEvent, 
                paymentMode: targetEvent.paymentMode || "manual", 
                razorpayKey: targetEvent.razorpayKey || globalKeys.key, 
-               razorpaySecret: targetEvent.razorpaySecret || globalKeys.secret 
+               razorpaySecret: targetEvent.razorpaySecret || globalKeys.secret,
+               menuItems: targetEvent.menuItems || [] 
              });
              localStorage.setItem("adminActiveEventId", targetEvent.eventId);
           }
@@ -233,7 +238,8 @@ export default function AdminDashboard() {
         ...currentEvent, 
         paymentMode: currentEvent.paymentMode || "manual", 
         razorpayKey: currentEvent.razorpayKey || globalKeys.key, 
-        razorpaySecret: currentEvent.razorpaySecret || globalKeys.secret 
+        razorpaySecret: currentEvent.razorpaySecret || globalKeys.secret,
+        menuItems: currentEvent.menuItems || [] 
       });
     }
   }, [activeEventId, allEvents, view]);
@@ -252,6 +258,27 @@ export default function AdminDashboard() {
       reader.onloadend = () => setSettings({ ...settings, qrCode: reader.result as string });
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleAddMenuItem = () => {
+    if (!newMenuItemName || !newMenuItemPrice) {
+      toast.error("Please enter both Name and Price for the menu item.");
+      return;
+    }
+    const newItem = {
+      name: newMenuItemName,
+      category: newMenuItemCategory,
+      price: Number(newMenuItemPrice)
+    };
+    setSettings({ ...settings, menuItems: [...settings.menuItems, newItem] });
+    setNewMenuItemName("");
+    setNewMenuItemPrice("");
+  };
+
+  const handleRemoveMenuItem = (index: number) => {
+    const updatedMenu = [...settings.menuItems];
+    updatedMenu.splice(index, 1);
+    setSettings({ ...settings, menuItems: updatedMenu });
   };
 
   const saveSettings = async () => {
@@ -418,7 +445,7 @@ export default function AdminDashboard() {
     window.open(`https://wa.me/91${guest.mobileNumber}?text=${encodedMessage}`, '_blank');
   };
 
-  // 🚀 FIXED: Reliable PDF Generator with increased delay for DOM paint
+  // 🚀 FIXED: Reliable PDF Generator 
   const downloadVIPPass = (guest: any) => {
     setDownloadingGuest(guest); 
     const toastId = toast.loading("Generating Concert-Style VIP Pass...");
@@ -447,15 +474,24 @@ export default function AdminDashboard() {
       } finally { 
         setDownloadingGuest(null); 
       }
-    }, 1000); // Wait for hidden DOM to securely mount
+    }, 1000); 
   };
 
-  // 🚀 FIXED: Strict array handling for Yudiel's Scanner
+  // 🚀 FIXED: Reliable Scanner Logic
   const handleScan = (result: any) => {
-    if (!result || !Array.isArray(result) || result.length === 0) return;
+    if (!result) return;
     
-    const text = String(result[0].rawValue).trim();
+    let text = "";
+    if (Array.isArray(result) && result.length > 0) {
+      text = result[0].rawValue;
+    } else if (typeof result === 'object' && result.text) {
+      text = result.text;
+    } else if (typeof result === 'string') {
+      text = result;
+    }
+
     if (!text) return;
+    text = String(text).trim(); 
     
     const foundGuest = guests.find((g: any) => String(g.entryCode) === text);
     
@@ -490,7 +526,8 @@ export default function AdminDashboard() {
   const filteredGuests = useMemo(() => {
     let list = Array.isArray(guests) ? [...guests] : [];
     if (view === "Confirmed") list = list.filter((g: any) => g.rsvpStatus === "Confirmed");
-    if (view === "Need Verification") list = list.filter((g: any) => g.rsvpStatus === "Need Verification");
+    // 🚀 FIXED: Replaced Need Verification with Failed
+    if (view === "Failed") list = list.filter((g: any) => g.rsvpStatus === "Failed");
     if (view === "Checked-In") list = list.filter((g: any) => g.rsvpStatus === "Checked-In");
     if (view === "Pending") list = list.filter((g: any) => g.rsvpStatus === "Pending");
     
@@ -539,6 +576,7 @@ export default function AdminDashboard() {
     return sum + amt;
   }, 0);
 
+  // 🚀 FIXED: Added Failed tab instead of Need Verification
   const stats = [
     { label: "Total Guests", value: guests.length, target: "Overview", icon: Users, color: "text-blue-400", bg: "bg-blue-500/20" },
     { 
@@ -548,16 +586,29 @@ export default function AdminDashboard() {
       icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/20" 
     },
     { 
-      label: !isCurrentEventActive ? "Checked-In" : "Need Verification", 
-      value: guests.filter((g: any) => g.rsvpStatus === (!isCurrentEventActive ? "Checked-In" : "Need Verification")).length, 
-      target: !isCurrentEventActive ? "Checked-In" : "Need Verification", 
-      icon: AlertCircle, color: "text-amber-400", bg: "bg-amber-500/20" 
+      label: !isCurrentEventActive ? "Checked-In" : "Failed", 
+      value: guests.filter((g: any) => g.rsvpStatus === (!isCurrentEventActive ? "Checked-In" : "Failed")).length, 
+      target: !isCurrentEventActive ? "Checked-In" : "Failed", 
+      icon: AlertCircle, color: "text-red-400", bg: "bg-red-500/20" 
     },
   ];
 
   return (
     <main className="min-h-screen w-full bg-[#050505] p-3 sm:p-6 md:p-10 relative text-white overflow-x-hidden font-sans">
-      <style dangerouslySetInnerHTML={{__html: ` @media print { body { background: white !important; color: black !important; padding: 0 !important; } .no-print { display: none !important; } .table-container { border: 1px solid #ccc !important; box-shadow: none !important; } th, td { color: black !important; border-bottom: 1px solid #eee !important; padding: 12px !important; } .print-badge { border: none !important; background: none !important; font-weight: bold !important; } } `}} />
+      {/* 🚀 FIXED: Advanced Print CSS to ensure correct alignment and rendering */}
+      <style dangerouslySetInnerHTML={{__html: ` 
+        @media print { 
+          body { background: white !important; color: black !important; padding: 0 !important; font-family: sans-serif; } 
+          .no-print { display: none !important; } 
+          .table-container { border: 1px solid #ddd !important; box-shadow: none !important; overflow: visible !important; } 
+          .overflow-x-auto { overflow: visible !important; }
+          table { width: 100% !important; border-collapse: collapse !important; table-layout: auto !important; } 
+          th, td { color: black !important; border-bottom: 1px solid #ddd !important; padding: 8px 12px !important; text-align: left !important; white-space: normal !important; } 
+          th { background-color: #f8f9fa !important; font-weight: bold !important; }
+          .print-badge { border: none !important; background: none !important; font-weight: bold !important; color: black !important; padding: 0 !important; } 
+          * { text-shadow: none !important; box-shadow: none !important; }
+        } 
+      `}} />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-800/20 via-black to-black -z-10 fixed no-print" />
 
       <div className="max-w-[1400px] mx-auto space-y-6 sm:space-y-8">
@@ -649,7 +700,7 @@ export default function AdminDashboard() {
              <div className="bg-red-500/20 p-2.5 rounded-full flex-shrink-0"><Lock className="w-5 h-5 text-red-400" /></div>
              <div>
                 <h3 className="text-red-400 font-bold text-sm sm:text-base uppercase tracking-wider">Event Locked</h3>
-                <p className="text-neutral-400 text-xs sm:text-sm mt-1 leading-relaxed">This event is now permanently locked. You can only view and export the data.</p>
+                <p className="text-neutral-400 text-xs sm:text-sm mt-1 leading-relaxed">This event commenced over 18 hours ago and is now permanently locked. You can only view and export the data.</p>
              </div>
           </motion.div>
         )}
@@ -687,6 +738,49 @@ export default function AdminDashboard() {
             </GlassCard>
 
             <div className="space-y-6">
+              <GlassCard className="p-6 sm:p-8 border-white/10 rounded-[2rem] bg-white/[0.02]">
+                <div className="flex items-center gap-3 mb-6 text-green-400 border-b border-white/5 pb-4">
+                  <Database className="w-5 h-5" />
+                  <h2 className="text-xl font-bold text-white tracking-wide">Add-ons & Menu</h2>
+                </div>
+
+                <div className="space-y-4">
+                  {settings.menuItems?.map((item, index) => (
+                    <div key={index} className="flex justify-between items-center bg-black/40 border border-white/5 rounded-xl p-3 shadow-inner">
+                      <div>
+                        <p className="text-sm text-white font-bold">{item.name}</p>
+                        <p className="text-[10px] text-neutral-500 uppercase">{item.category}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-mono text-amber-400">₹{item.price}</span>
+                        <button disabled={!isCurrentEventActive} onClick={() => handleRemoveMenuItem(index)} className="p-1.5 text-red-500 hover:bg-red-500/20 rounded-md transition-colors disabled:opacity-50">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {isCurrentEventActive && (
+                    <div className="pt-4 border-t border-white/10 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <input type="text" placeholder="Item Name (e.g. Blue Label)" value={newMenuItemName} onChange={(e) => setNewMenuItemName(e.target.value)} className="col-span-2 bg-black/50 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-green-500/50" />
+                        <select value={newMenuItemCategory} onChange={(e) => setNewMenuItemCategory(e.target.value)} className="bg-black/50 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-green-500/50 appearance-none">
+                          <option value="Spirits">Spirits</option>
+                          <option value="Champagne">Champagne</option>
+                          <option value="Food">Food / Platter</option>
+                          <option value="Shisha">Shisha / Hookah</option>
+                          <option value="Other">Other</option>
+                        </select>
+                        <input type="number" placeholder="Price (₹)" value={newMenuItemPrice} onChange={(e) => setNewMenuItemPrice(e.target.value)} className="bg-black/50 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-green-500/50" />
+                      </div>
+                      <button onClick={handleAddMenuItem} className="w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs uppercase font-bold tracking-widest transition-all">
+                        + Add to Menu
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </GlassCard>
+
               <GlassCard className="p-6 sm:p-8 border-white/10 rounded-[2rem] bg-white/[0.02]">
                 <div className="flex items-center gap-3 mb-6 text-blue-400 border-b border-white/5 pb-4">
                   <IndianRupee className="w-5 h-5" />
@@ -893,6 +987,8 @@ export default function AdminDashboard() {
                               {guest.tableId && (
                                 <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1 shadow-sm">
                                   T: {tables.find((t: any) => t.id === guest.tableId)?.tableName || "VIP"}
+                                  {/* 🍾 PRE-ORDER VISIBILITY */}
+                                  {guest.preOrders && guest.preOrders.length > 0 && <span className="ml-1 text-[10px]">🍾</span>}
                                 </span>
                               )}
                             </div>
@@ -937,7 +1033,7 @@ export default function AdminDashboard() {
       </div>
 
       <AnimatePresence>
-        {/* 🚀 FIXED: Scanner Component - Clean and Robust */}
+        {/* 🚀 RESTORED: Scanner Component */}
         {isScannerOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md no-print">
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="z-10 w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-3xl overflow-hidden relative shadow-2xl">
@@ -945,13 +1041,9 @@ export default function AdminDashboard() {
               {!scannedResult ? (
                 <div className="p-6">
                   <h2 className="text-xl text-center text-white font-bold tracking-wide mb-6">Scan Entry Pass</h2>
-                  
                   <div className="rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(251,191,36,0.15)] relative bg-black aspect-square flex items-center justify-center w-full min-h-[300px]">
-                    <Scanner 
-                      onScan={(result) => handleScan(result)} 
-                    />
+                    <Scanner onScan={(result) => handleScan(result)} />
                   </div>
-                  
                   <p className="text-center text-neutral-500 text-sm mt-4 animate-pulse">Position QR Code within the frame...</p>
                 </div>
               ) : (
@@ -1153,7 +1245,7 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* 🚀 FIXED: Reliable PDF Pass Element */}
+      {/* 🚀 RESTORED: Reliable PDF Pass Element */}
       <div className="fixed -top-[9999px] -left-[9999px] no-print opacity-0 pointer-events-none">
         <div id="admin-concert-ticket-export" className="flex w-[800px] h-[300px] bg-neutral-950 text-white font-sans overflow-hidden border border-amber-500/30 rounded-xl shadow-2xl relative">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-black to-black opacity-80"></div>
@@ -1161,9 +1253,9 @@ export default function AdminDashboard() {
              <div><h3 className="text-amber-500 tracking-[0.3em] uppercase text-xs font-bold mb-2">VIP ADMISSION</h3><h1 className="text-4xl font-black uppercase tracking-wider text-white drop-shadow-md">{settings.mainTitle || "THE INFINITY EVENT"}</h1><p className="text-neutral-400 mt-1 text-lg italic font-serif">{settings.mainHeadline || "Exclusive Access Only"}</p></div>
              <div><p className="text-neutral-500 text-xs uppercase tracking-widest mb-1">Admit One</p><h2 className="text-3xl font-bold uppercase tracking-wide text-white">{(downloadingGuest?.firstName || "Guest")} {(downloadingGuest?.lastName || "")}</h2></div>
              <div className="flex gap-10 border-t border-neutral-800 pt-5 mt-2">
-                <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Date</p><p className="font-bold text-white tracking-wide">{settings.eventDate || "TBA"}</p></div>
-                <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Time</p><p className="font-bold text-white tracking-wide">{settings.eventTime || "TBA"}</p></div>
-                {downloadingGuest?.tableId && <div><p className="text-amber-500 text-xs uppercase tracking-wider mb-1">VIP Table</p><p className="font-bold text-amber-400 tracking-wide">{tables.find((t: any) => t.id === downloadingGuest?.tableId)?.tableName || "Reserved"}</p></div>}
+               <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Date</p><p className="font-bold text-white tracking-wide">{settings.eventDate || "TBA"}</p></div>
+               <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Time</p><p className="font-bold text-white tracking-wide">{settings.eventTime || "TBA"}</p></div>
+               {downloadingGuest?.tableId && <div><p className="text-amber-500 text-xs uppercase tracking-wider mb-1">VIP Table</p><p className="font-bold text-amber-400 tracking-wide">{tables.find((t: any) => t.id === downloadingGuest?.tableId)?.tableName || "Reserved"}</p></div>}
              </div>
           </div>
           <div className="w-[220px] bg-amber-500/5 p-6 flex flex-col items-center justify-center relative z-10">

@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, Suspense } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Plus, LayoutGrid, Users, IndianRupee, Crown, User, AlertCircle, ChevronDown, ArrowLeft } from "lucide-react";
+import { Loader2, Plus, LayoutGrid, Users, IndianRupee, Crown, User, AlertCircle, ChevronDown, ArrowLeft, ShoppingCart } from "lucide-react";
 import GlassCard from "@/components/atoms/GlassCard";
 import { useSearchParams, useRouter } from "next/navigation";
 
@@ -139,11 +139,10 @@ function TableManagerContent() {
             {tables.map((table) => {
               const { captain, subs } = getTableReservationDetails(table.id);
               return (
-                <motion.div key={table.id} className={`rounded-3xl p-6 border transition-all ${table.status === 'Requested' || table.status === 'Booked' ? 'bg-amber-500/5 border-amber-500/30' : 'bg-white/[0.02] border-white/10'}`}>
+                <motion.div key={table.id} className={`rounded-3xl p-6 border transition-all flex flex-col ${table.status === 'Requested' || table.status === 'Booked' ? 'bg-amber-500/5 border-amber-500/30' : 'bg-white/[0.02] border-white/10'}`}>
                   <div className="flex justify-between items-start mb-4 border-b border-white/10 pb-4">
                     <div><h3 className="text-xl font-black text-white uppercase tracking-wider">{table.tableName}</h3><p className="text-xs text-zinc-500 mt-1">Min Spend: <span className="text-amber-500">₹{table.minSpend}</span></p></div>
                     
-                    {/* 🚀 FIX 2: Added "Booked" color status */}
                     <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full ${
                       table.status === 'Available' ? 'bg-green-500/10 text-green-400' : 
                       table.status === 'Requested' ? 'bg-orange-500/10 text-orange-400' : 
@@ -154,9 +153,25 @@ function TableManagerContent() {
 
                   </div>
                   {captain ? (
-                    <div className="space-y-3">
+                    <div className="space-y-3 flex-grow">
                       <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center"><Crown className="w-4 h-4 text-amber-500"/></div><div><p className="text-sm font-bold text-white">{captain.firstName} {captain.lastName}</p><p className="text-[10px] text-zinc-500 uppercase">Captain • {captain.mobileNumber}</p></div></div>
                       {subs.length > 0 && <div className="pl-11 space-y-2">{subs.map((sub: any, idx: number) => <div key={idx} className="flex items-center gap-2"><User className="w-3 h-3 text-zinc-500" /><p className="text-xs text-zinc-400">{sub.firstName} {sub.lastName}</p></div>)}</div>}
+                      
+                      {/* 🚀 ADDED: Pre-order display */}
+                      {captain.preOrders && captain.preOrders.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-white/10 w-full">
+                          <p className="text-[10px] text-amber-500 uppercase font-bold tracking-widest mb-2 flex items-center gap-1.5"><ShoppingCart className="w-3 h-3"/> Pre-Orders 🍾</p>
+                          <div className="space-y-1.5">
+                            {captain.preOrders.map((po: any, idx: number) => (
+                              <div key={idx} className="flex justify-between items-center bg-black/40 rounded-lg p-2 border border-white/5">
+                                <span className="text-xs text-white"><span className="text-neutral-500 font-mono mr-2">{po.quantity}x</span>{po.name}</span>
+                                <span className="text-xs text-amber-400 font-mono">₹{po.price * po.quantity}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                     </div>
                   ) : <div className="flex items-center gap-2 text-zinc-600 text-sm py-4"><AlertCircle className="w-4 h-4"/> No active reservation</div>}
                 </motion.div>
