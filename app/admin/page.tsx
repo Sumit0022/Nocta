@@ -128,16 +128,22 @@ export default function AdminDashboard() {
     : true;
 
   const fetchWithSafeJSON = async (url: string, options?: any) => {
-    const res = await fetch(url, options);
-    if (!res.ok && res.status === 401) {
-      router.push('/admin/login');
-      throw new Error("Unauthorized");
-    }
-    const text = await res.text();
     try {
-      return { ok: res.ok, status: res.status, data: JSON.parse(text) };
-    } catch (e) {
-      throw new Error(`Invalid Response`);
+      const res = await fetch(url, options);
+      if (!res.ok && res.status === 401) {
+        toast.error("Session expired or Unauthorized");
+        return { ok: false, status: 401, data: { success: false, data: [] } };
+      }
+      const text = await res.text();
+      try {
+        return { ok: res.ok, status: res.status, data: JSON.parse(text) };
+      } catch (e) {
+        console.warn("API returned invalid response (Not JSON)");
+        return { ok: false, status: res.status, data: { success: false, data: [] } };
+      }
+    } catch (error) {
+      console.error("Network Error:", error);
+      return { ok: false, status: 500, data: { success: false, data: [] } };
     }
   };
 
@@ -146,7 +152,7 @@ export default function AdminDashboard() {
       const response = await fetchWithSafeJSON('/api/admin/settings');
       const result = response.data;
       
-      if (result.success && Array.isArray(result.data)) {
+      if (result && result.success && Array.isArray(result.data)) {
         setAllEvents(result.data);
         
         const globalKeys = {
@@ -192,14 +198,14 @@ export default function AdminDashboard() {
     setLoading(true);
     try {
       const guestsRes = await fetchWithSafeJSON(`/api/admin/guests?eventId=${eventId}`);
-      if (guestsRes.data.success) {
+      if (guestsRes.data && guestsRes.data.success) {
         setGuests(Array.isArray(guestsRes.data.guests || guestsRes.data.data) ? (guestsRes.data.guests || guestsRes.data.data) : []);
       } else {
         setGuests([]);
       }
 
       const tablesRes = await fetchWithSafeJSON(`/api/admin/tables?eventId=${eventId}`);
-      if (tablesRes.ok && tablesRes.data.success) {
+      if (tablesRes.ok && tablesRes.data && tablesRes.data.success) {
         setTables(tablesRes.data.data || []);
       }
     } catch (error) { 
@@ -214,7 +220,7 @@ export default function AdminDashboard() {
     setCrmLoading(true);
     try {
       const response = await fetchWithSafeJSON('/api/admin/crm');
-      if (response.data.success) setCrmData(response.data.data || []);
+      if (response.data && response.data.success) setCrmData(response.data.data || []);
     } catch (error) { 
       toast.error("Failed to fetch CRM data"); 
     } finally { 
@@ -330,7 +336,7 @@ export default function AdminDashboard() {
       const response = await fetchWithSafeJSON('/api/admin/blacklist', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobileNumber, action, reason: "Admin Discretion" })
       });
-      if (response.data.success) { toast.success(response.data.message, { id: toastId }); fetchCrmData(); }
+      if (response.data && response.data.success) { toast.success(response.data.message, { id: toastId }); fetchCrmData(); }
     } catch (err) { toast.error("Network error", { id: toastId }); }
   };
 
@@ -428,7 +434,7 @@ export default function AdminDashboard() {
         setIsModalOpen(false); 
         fetchGuestsAndTables(activeEventId);
       } else {
-        toast.error(response.data.error || response.data.message || "Failed to save changes", { id: toastId });
+        toast.error(response.data?.error || response.data?.message || "Failed to save changes", { id: toastId });
       }
     } catch (err) {
       toast.error("Network Error", { id: toastId });
@@ -445,7 +451,6 @@ export default function AdminDashboard() {
     window.open(`https://wa.me/91${guest.mobileNumber}?text=${encodedMessage}`, '_blank');
   };
 
-  // 🚀 FIXED: Reliable PDF Generator 
   const downloadVIPPass = (guest: any) => {
     setDownloadingGuest(guest); 
     const toastId = toast.loading("Generating Concert-Style VIP Pass...");
@@ -477,7 +482,7 @@ export default function AdminDashboard() {
     }, 1000); 
   };
 
-  // 🚀 FIXED: Reliable Scanner Logic
+  // 🚀 SCANNER FIX: Robust scanner execution
   const handleScan = (result: any) => {
     if (!result) return;
     
@@ -526,7 +531,6 @@ export default function AdminDashboard() {
   const filteredGuests = useMemo(() => {
     let list = Array.isArray(guests) ? [...guests] : [];
     if (view === "Confirmed") list = list.filter((g: any) => g.rsvpStatus === "Confirmed");
-    // 🚀 FIXED: Replaced Need Verification with Failed
     if (view === "Failed") list = list.filter((g: any) => g.rsvpStatus === "Failed");
     if (view === "Checked-In") list = list.filter((g: any) => g.rsvpStatus === "Checked-In");
     if (view === "Pending") list = list.filter((g: any) => g.rsvpStatus === "Pending");
@@ -569,14 +573,12 @@ export default function AdminDashboard() {
     return crmData.filter((c: any) => `${c.firstName || ""} ${c.lastName || ""}`.toLowerCase().includes(query) || String(c.mobileNumber || "").toLowerCase().includes(query)).slice(0, 5); 
   }, [crmData, crmAddSearchQuery]);
 
+  // 🚀 REVENUE FIX: Strictly extracting the final paid amount (which includes pre-orders naturally)
   const revenueReceived = guests.filter((g: any) => ["Confirmed", "Checked-In", "Not Attended"].includes(g.rsvpStatus)).reduce((sum, g) => {
     if (g.isSubordinate) return sum; 
-    const guestTable = tables.find((t: any) => t.id === g.tableId);
-    const amt = (g.isCaptain && guestTable) ? Number(guestTable.minSpend) : Number(g.amount || 0);
-    return sum + amt;
+    return sum + Number(g.amount || 0); // No Math.max, just raw amount paid
   }, 0);
 
-  // 🚀 FIXED: Added Failed tab instead of Need Verification
   const stats = [
     { label: "Total Guests", value: guests.length, target: "Overview", icon: Users, color: "text-blue-400", bg: "bg-blue-500/20" },
     { 
@@ -595,7 +597,6 @@ export default function AdminDashboard() {
 
   return (
     <main className="min-h-screen w-full bg-[#050505] p-3 sm:p-6 md:p-10 relative text-white overflow-x-hidden font-sans">
-      {/* 🚀 FIXED: Advanced Print CSS to ensure correct alignment and rendering */}
       <style dangerouslySetInnerHTML={{__html: ` 
         @media print { 
           body { background: white !important; color: black !important; padding: 0 !important; font-family: sans-serif; } 
@@ -983,11 +984,10 @@ export default function AdminDashboard() {
                               {guest.isSubordinate && guest.source !== 'couple_partner' && <span className="bg-white/5 text-neutral-400 border border-white/10 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1"><User className="w-3 h-3"/> Pax</span>}
                               {(!guest.entryType || guest.entryType === 'Stag') && !guest.isSubordinate && !guest.isCaptain && <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1 shadow-sm"><User className="w-3 h-3"/> Stag</span>}
                               
-                              {/* 🚀 THE NEW TABLE BADGE */}
+                              {/* 🚀 PRE-ORDER VISIBILITY ON ADMIN */}
                               {guest.tableId && (
                                 <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[9px] px-2 py-0.5 rounded-md uppercase font-bold tracking-widest flex items-center gap-1 shadow-sm">
                                   T: {tables.find((t: any) => t.id === guest.tableId)?.tableName || "VIP"}
-                                  {/* 🍾 PRE-ORDER VISIBILITY */}
                                   {guest.preOrders && guest.preOrders.length > 0 && <span className="ml-1 text-[10px]">🍾</span>}
                                 </span>
                               )}
@@ -996,7 +996,7 @@ export default function AdminDashboard() {
                         </td>
 
                         <td className="p-4 text-neutral-400 font-mono no-print text-xs">{guest.mobileNumber}</td>
-                        <td className="p-4 text-emerald-400 font-mono font-bold no-print">{guest.isSubordinate ? <span className="text-neutral-600">-</span> : guest.isCaptain && guest.tableId ? `₹${tables.find((t: any) => t.id === guest.tableId)?.minSpend || guest.amount || 0}` : `₹${guest.amount || 0}`}</td>
+                        <td className="p-4 text-emerald-400 font-mono font-bold no-print">{guest.isSubordinate ? <span className="text-neutral-600">-</span> : `₹${guest.amount || 0}`}</td>
                         <td className="p-4 font-mono text-amber-400 font-bold tracking-widest bg-amber-500/5 px-3 rounded-lg w-max inline-block mt-2 border border-amber-500/10">{guest.entryCode || "N/A"}</td>
                         <td className="p-4">
                           <span className={`print-badge px-2.5 py-1 rounded-md text-[10px] border whitespace-nowrap font-bold tracking-widest uppercase shadow-sm
@@ -1032,8 +1032,8 @@ export default function AdminDashboard() {
         )}
       </div>
 
+      {/* 🚀 SEPARATE MODAL WRAPPERS (Fixes JSX Mismatch and Strict Scanner Behavior) */}
       <AnimatePresence>
-        {/* 🚀 RESTORED: Scanner Component */}
         {isScannerOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md no-print">
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="z-10 w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-3xl overflow-hidden relative shadow-2xl">
@@ -1042,7 +1042,14 @@ export default function AdminDashboard() {
                 <div className="p-6">
                   <h2 className="text-xl text-center text-white font-bold tracking-wide mb-6">Scan Entry Pass</h2>
                   <div className="rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(251,191,36,0.15)] relative bg-black aspect-square flex items-center justify-center w-full min-h-[300px]">
-                    <Scanner onScan={(result) => handleScan(result)} />
+                    <Scanner 
+                       onScan={(result) => handleScan(result)} 
+                       onError={(error) => {
+                          console.error("Scanner Error:", error);
+                          toast.error("Camera access denied or device not supported.");
+                          setIsScannerOpen(false);
+                       }}
+                    />
                   </div>
                   <p className="text-center text-neutral-500 text-sm mt-4 animate-pulse">Position QR Code within the frame...</p>
                 </div>
@@ -1065,7 +1072,9 @@ export default function AdminDashboard() {
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
 
+      <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -1160,8 +1169,9 @@ export default function AdminDashboard() {
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
 
-        {/* 🚀 CLASSIC VERIFY PAYMENT MODAL RESTORED */}
+      <AnimatePresence>
         {isVerifyModalOpen && selectedGuest && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsVerifyModalOpen(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
@@ -1245,8 +1255,7 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* 🚀 RESTORED: Reliable PDF Pass Element */}
-      <div className="fixed -top-[9999px] -left-[9999px] no-print opacity-0 pointer-events-none">
+      <div style={{ position: 'fixed', top: '-10000px', left: '-10000px' }} className="no-print z-[-50]">
         <div id="admin-concert-ticket-export" className="flex w-[800px] h-[300px] bg-neutral-950 text-white font-sans overflow-hidden border border-amber-500/30 rounded-xl shadow-2xl relative">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/10 via-black to-black opacity-80"></div>
           <div className="w-[580px] p-8 flex flex-col justify-between relative z-10 border-r-2 border-dashed border-neutral-700">
@@ -1255,7 +1264,15 @@ export default function AdminDashboard() {
              <div className="flex gap-10 border-t border-neutral-800 pt-5 mt-2">
                <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Date</p><p className="font-bold text-white tracking-wide">{settings.eventDate || "TBA"}</p></div>
                <div><p className="text-neutral-500 text-xs uppercase tracking-wider mb-1">Time</p><p className="font-bold text-white tracking-wide">{settings.eventTime || "TBA"}</p></div>
-               {downloadingGuest?.tableId && <div><p className="text-amber-500 text-xs uppercase tracking-wider mb-1">VIP Table</p><p className="font-bold text-amber-400 tracking-wide">{tables.find((t: any) => t.id === downloadingGuest?.tableId)?.tableName || "Reserved"}</p></div>}
+               {downloadingGuest?.tableId && (
+                 <div>
+                   <p className="text-amber-500 text-xs uppercase tracking-wider mb-1">VIP Table</p>
+                   <p className="font-bold text-amber-400 tracking-wide flex items-center gap-1.5">
+                     {tables.find((t: any) => t.id === downloadingGuest?.tableId)?.tableName || "Reserved"}
+                     {downloadingGuest.preOrders && downloadingGuest.preOrders.length > 0 && <span>🍾</span>}
+                   </p>
+                 </div>
+               )}
              </div>
           </div>
           <div className="w-[220px] bg-amber-500/5 p-6 flex flex-col items-center justify-center relative z-10">

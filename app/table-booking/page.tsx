@@ -242,7 +242,7 @@ function TableBookingContent() {
                 initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}
                 className="text-4xl md:text-5xl font-black uppercase tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white via-white/90 to-white/40 mb-4"
               >
-                {entryType === "Group" ? "Reserve VIP Table" : "Upgrade to VIP"}
+                {entryType === "Group" ? "Reserve A Table" : "Upgrade to VIP"}
               </motion.h1>
               
               <motion.p 

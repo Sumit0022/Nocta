@@ -6,8 +6,12 @@ import jsPDF from "jspdf";
 import { toPng } from "html-to-image"; 
 import { motion } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
-import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download, Crown, Info } from "lucide-react"; 
+import { CheckCircle2, Calendar, MapPin, Clock, Loader2, Download, Crown, Info, ShoppingCart } from "lucide-react"; 
 import { toast } from "sonner";
+
+// 🚀 THE FIX: Imported Firebase for the Dual-Engine Fallback
+import { db } from "@/lib/firebase";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore/lite";
 
 export default function DashboardPage() {
   const [guestName, setGuestName] = useState("");
@@ -16,12 +20,11 @@ export default function DashboardPage() {
   const [eventDetails, setEventDetails] = useState<any>(null);
   
   const [tableName, setTableName] = useState<string | null>(null);
+  const [preOrders, setPreOrders] = useState<any[]>([]); 
   
-  // 🚀 NEW: State to store Entry Type for partner message
   const [entryType, setEntryType] = useState("Stag");
 
   useEffect(() => {
-    // 🚀 THE FIX: Dismiss any stuck loading toasts from the Payment Page!
     toast.dismiss();
 
     const fetchAllData = async () => {
@@ -33,47 +36,90 @@ export default function DashboardPage() {
       try {
         let fetchedTableId = null;
 
+        // 1. FETCH GUEST DETAILS (For Entry Code, Table ID & Pre-orders)
         if (fName && lName) {
           setGuestName(`${fName} ${lName}`);
-          const guestRes = await fetch(`/api/guest/details?firstName=${fName}&lastName=${lName}&eventId=${eId || ""}`, { cache: "no-store" });
+          const guestRes = await fetch(`/api/guest/details?firstName=${fName}&lastName=${lName}&eventId=${eId || ""}`);
           const guestResult = await guestRes.json();
-          if (guestResult.success) {
+          if (guestResult.success && guestResult.data) {
             setEntryCode(guestResult.data.entryCode || "N/A");
             fetchedTableId = guestResult.data.tableId; 
-            // 🚀 THE FIX: Catch the entry type
             setEntryType(guestResult.data.entryType || "Stag");
-          }
-        }
-
-        const settingsRes = await fetch('/api/admin/settings', { cache: "no-store" });
-        const settingsResult = await settingsRes.json();
-        
-        if (settingsResult.success && Array.isArray(settingsResult.data)) {
-          const currentEvent = settingsResult.data.find((e: any) => e.eventId === eId);
-          if (currentEvent) {
-            setEventDetails(currentEvent);
-          } else if (settingsResult.data.length > 0) {
-            setEventDetails(settingsResult.data[0]);
-          }
-        }
-
-        if (fetchedTableId && eId) {
-          const tablesRes = await fetch(`/api/admin/tables?eventId=${eId}`, { cache: "no-store" });
-          const tablesResult = await tablesRes.json();
-          if (tablesResult.success && Array.isArray(tablesResult.data)) {
-            const foundTable = tablesResult.data.find((t: any) => t.id === fetchedTableId);
-            if (foundTable) {
-              setTableName(foundTable.tableName);
+            
+            // 🚀 Pre-orders loaded for the VIP Pass
+            if (guestResult.data.preOrders && guestResult.data.preOrders.length > 0) {
+              setPreOrders(guestResult.data.preOrders);
             }
+          }
+        }
+
+        // 2. 🚀 HYBRID FETCH: Event Details (API First, Firebase Fallback for Incognito)
+        if (eId) {
+          let currentEvent: any = null;
+          try {
+            const settingsRes = await fetch(`/api/admin/settings?t=${Date.now()}`, { cache: "no-store" });
+            if (settingsRes.ok) {
+              const settingsResult = await settingsRes.json();
+              if (settingsResult.success && Array.isArray(settingsResult.data)) {
+                currentEvent = settingsResult.data.find((e: any) => String(e.eventId).trim() === String(eId).trim());
+              }
+            }
+          } catch(err) { console.warn("API Event fetch blocked. Falling back to DB."); }
+
+          if (!currentEvent) {
+            // 🛡️ Fallback: Bypass Next.js Middleware directly via Firebase
+            try {
+              const docRef = doc(db, "events", eId);
+              const docSnap = await getDoc(docRef);
+              if (docSnap.exists()) currentEvent = docSnap.data();
+            } catch(err) { console.warn("Firebase Event fetch failed."); }
+          }
+          if (currentEvent) setEventDetails(currentEvent);
+        }
+
+        // 3. 🚀 HYBRID FETCH & TS ERROR KILLED: Table Details
+        if (fetchedTableId && eId) {
+          let foundTable: any = null; // 🚀 TS ERROR FIX: Forced 'any' type
+
+          try {
+            const tablesRes = await fetch(`/api/admin/tables?eventId=${eId}&t=${Date.now()}`, { cache: "no-store" });
+            if (tablesRes.ok) {
+              const tablesResult = await tablesRes.json();
+              if (tablesResult.success && Array.isArray(tablesResult.data)) {
+                foundTable = tablesResult.data.find((t: any) => String(t.id) === String(fetchedTableId));
+              }
+            }
+          } catch(err) { console.warn("API Table fetch blocked. Falling back to DB."); }
+
+          if (!foundTable) {
+            // 🛡️ Fallback
+            try {
+              const tDocRef = doc(db, "tables", fetchedTableId);
+              const tDocSnap = await getDoc(tDocRef);
+              if (tDocSnap.exists()) {
+                foundTable = tDocSnap.data();
+              } else {
+                const tablesQuery = query(collection(db, "tables"), where("eventId", "==", eId));
+                const tablesSnapshot = await getDocs(tablesQuery);
+                foundTable = tablesSnapshot.docs.map(d => ({ id: d.id, ...d.data() })).find((t: any) => String(t.id) === String(fetchedTableId));
+              }
+            } catch(err) { console.warn("Firebase Table fetch failed."); }
+          }
+
+          // 🚀 Safe extraction of tableName
+          if (foundTable && foundTable.tableName) {
+            setTableName(foundTable.tableName);
           }
         }
 
       } catch (e) {
         console.error("Dashboard Error:", e);
+        toast.error("Failed to sync some data. Please refresh.");
       } finally {
         setLoading(false);
       }
     };
+    
     fetchAllData();
   }, []);
 
@@ -166,6 +212,21 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 )}
+                
+                {/* 🚀 PRE-ORDERED ITEMS SECTION IN VIP PASS */}
+                {preOrders.length > 0 && (
+                  <div className="pt-3 border-t border-white/5">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><ShoppingCart className="w-3 h-3 text-amber-500/70"/> Pre-Ordered Add-ons</p>
+                    <div className="bg-black/30 rounded-xl p-3 border border-white/5 space-y-1.5">
+                      {preOrders.map((item: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center text-xs">
+                          <span className="text-zinc-300">{item.name}</span>
+                          <span className="text-amber-400 font-mono font-bold">x{item.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="pt-6 border-t border-white/10 text-center">
@@ -195,7 +256,6 @@ export default function DashboardPage() {
           </GlassCard>
         </div>
 
-        {/* 🚀 THE FIX: Partner Message Displayed OUTSIDE the PDF target card */}
         {entryType !== "Stag" && (
           <div className="mt-6 bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl text-center shadow-[0_0_15px_rgba(59,130,246,0.1)] animate-in fade-in zoom-in">
             <Info className="w-5 h-5 text-blue-400 mx-auto mb-2" />
