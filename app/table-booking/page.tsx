@@ -180,7 +180,6 @@ function TableBookingContent() {
     return ["All", ...Array.from(categories)];
   }, [menuItems]);
 
-  // 🚀 THE ULTIMATE FIX: Fail-proof navigation logic
   const proceedToCheckout = () => {
     if (selectedTable) {
       const cartItemsArray = Object.entries(cart).map(([name, qty]) => {
@@ -188,7 +187,6 @@ function TableBookingContent() {
         return { name, quantity: qty, price: itemObj?.price || 0 };
       });
 
-      // 🛡️ Wrapping localStorage in try-catch so it NEVER blocks execution if it fails
       try {
         localStorage.setItem("pendingTable", JSON.stringify({ 
           table: selectedTable, 
@@ -197,14 +195,11 @@ function TableBookingContent() {
           cartTotal,
           finalAmount: finalAmountToPay
         }));
-      } catch (err) {
-        console.warn("Could not save to LocalStorage:", err);
-      }
+      } catch (err) { console.warn("Could not save to LocalStorage:", err); }
     } else {
       try { localStorage.removeItem("pendingTable"); } catch (err) {}
     }
     
-    // 🛡️ Explicit parameter appending to avoid any object-iteration errors
     const params = new URLSearchParams();
     if (firstName) params.append("firstName", firstName);
     if (lastName) params.append("lastName", lastName);
@@ -224,13 +219,12 @@ function TableBookingContent() {
       if (amountPaid) params.append("amountPaid", amountPaid);
     }
 
-    // Always push successfully!
-    router.push(`/payment?${params.toString()}`);
+    // 🚀 THE MASTER FIX: Hard Navigation forces the browser to go to the page!
+    window.location.href = `/payment?${params.toString()}`;
   };
 
   return (
     <div className="max-w-5xl w-full mx-auto pb-20">
-      
       <AnimatePresence mode="wait">
         {step === 1 && (
           <motion.div key="step1" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="w-full">
@@ -362,7 +356,6 @@ function TableBookingContent() {
             </AnimatePresence>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10 pt-4">
-              {/* 🛡️ Explicit type="button" added to block implicit page reload */}
               <button type="button" onClick={handleProceedToMenu} disabled={isVerifying} className="w-full sm:w-auto min-w-[280px] bg-gradient-to-r from-amber-500 to-yellow-400 text-black py-4 px-8 rounded-2xl font-black uppercase tracking-widest hover:from-amber-400 hover:to-yellow-300 active:scale-95 transition-all duration-300 flex justify-center items-center gap-3 shadow-[0_10px_40px_rgba(245,158,11,0.3)] hover:shadow-[0_15px_50px_rgba(245,158,11,0.5)] disabled:opacity-50">
                 {isVerifying ? <Loader2 className="w-5 h-5 animate-spin text-black" /> : <><Sparkles className="w-5 h-5" /> Next Step <ArrowRight className="w-5 h-5" /></>}
               </button>
