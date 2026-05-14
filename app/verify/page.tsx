@@ -7,31 +7,75 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
-// 🚀 FIXED: Added 'Heart' to the imports so it doesn't crash VS Code
 import { ArrowRight, Loader2, KeyRound, CheckCircle2, Ticket, ChevronDown, Users, User, Crown, Info, Heart } from "lucide-react";
 
 // 🚀 FIREBASE IMPORTS
 import { auth } from "@/lib/firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
+// 🚀 THE MASTER FIX: Bulletproof Date Parser for Indian formats (DD-MM-YYYY or DD/MM/YYYY)
+const parseEventDateStrict = (dateStr: string, timeStr: string) => {
+  if (!dateStr) return new Date();
+  try {
+    const parts = dateStr.split(/[-/]/);
+    let year = new Date().getFullYear(), month = 1, day = 1;
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        year = Number(parts[0]); month = Number(parts[1]); day = Number(parts[2]);
+      } else {
+        day = Number(parts[0]); month = Number(parts[1]); year = Number(parts[2]);
+        if (year < 100) year += 2000;
+      }
+    }
+    let hours = 0, minutes = 0;
+    if (timeStr) {
+      if (timeStr.includes(':')) {
+         const timeParts = timeStr.split(':');
+         hours = Number(timeParts[0]); minutes = Number(timeParts[1]);
+      } else {
+         hours = Number(timeStr);
+      }
+    }
+    const parsedDate = new Date(year, month - 1, day, hours, minutes);
+    return isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+  } catch (e) {
+    return new Date();
+  }
+};
+
 const getEventStatus = (dateStr: string, timeStr: string) => {
   if (!dateStr || !timeStr) return "Active"; 
-  const eventDateTime = new Date(`${dateStr}T${timeStr}`);
-  if (isNaN(eventDateTime.getTime())) return "Active"; 
-  const lockTime = new Date(eventDateTime.getTime() + 18 * 60 * 60 * 1000);
+  const eventDateTime = parseEventDateStrict(dateStr, timeStr);
+  
+  // 🚀 CHANGED: Locked and Removed after 6 Hours of event start time
+  const lockTime = new Date(eventDateTime.getTime() + 6 * 60 * 60 * 1000);
   return new Date() > lockTime ? "Completed" : "Active";
 };
 
 const getSafeTime = (dateStr: string, timeStr: string) => {
   if (!dateStr || !timeStr) return 0;
-  const t = new Date(`${dateStr}T${timeStr}`).getTime();
-  return isNaN(t) ? 0 : t;
+  return parseEventDateStrict(dateStr, timeStr).getTime();
 };
 
 const formatEventDate = (dateStr: string) => {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  try {
+    const parts = dateStr.split(/[-/]/);
+    let year = new Date().getFullYear(), month = 1, day = 1;
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        year = Number(parts[0]); month = Number(parts[1]); day = Number(parts[2]);
+      } else {
+        day = Number(parts[0]); month = Number(parts[1]); year = Number(parts[2]);
+        if (year < 100) year += 2000;
+      }
+    }
+    const d = new Date(year, month - 1, day);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  } catch (e) {
+    return dateStr;
+  }
 };
 
 export default function VerifyPage() {
@@ -104,7 +148,6 @@ export default function VerifyPage() {
 
     setLoading(true); setError("");
 
-    // 🚀 THE MASTER FIX: Verify Partner Identity First (Before Main Guest)
     if (!isAlreadyBookedMode && entryType === "Couple") {
       try {
         const pRes = await fetch("/api/guest/verify", {
@@ -115,11 +158,10 @@ export default function VerifyPage() {
         const pError = (pData.error || pData.message || "").toLowerCase();
         const pIsNotFound = pRes.status === 404 || pError.includes("not found");
 
-        // If backend throws an error and it's NOT a "guest not found" (meaning the number is locked to a different name)
         if (!pRes.ok && !pIsNotFound) {
           setError(`Partner Error: ${pData.error || pData.message}`);
           setLoading(false);
-          return; // Block execution, show exact error to user
+          return; 
         }
       } catch (err) {
         setError("Network error while verifying partner. Please try again.");
@@ -128,7 +170,6 @@ export default function VerifyPage() {
       }
     }
 
-    // 🚀 MAIN GUEST VERIFICATION
     try {
       const res = await fetch("/api/guest/verify", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -197,7 +238,6 @@ export default function VerifyPage() {
         if (entryType === "Group" && !successData?.data?.tableId) isUpgradeFlow = true;
       }
 
-      // 🚀 THE MASTER FIX: ADDED "Failed" TO THE ROUTING CONDITION
       if (isNewRegistration || currentStatus === "Pending" || currentStatus === "Failed" || isUpgradeFlow) {
         const queryParams = new URLSearchParams({
           firstName, lastName, mobile: mobileNumber, eventId: selectedEventId,
@@ -224,7 +264,6 @@ export default function VerifyPage() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-neutral-800/30 via-neutral-950 to-black -z-10" />
       <div id="recaptcha-container"></div>
 
-      {/* 🚀 UI OPTIMIZED FOR DESKTOP AND MOBILE */}
       <GlassCard className="w-full max-w-xl p-6 sm:p-10 relative z-10 shadow-2xl rounded-[2rem] border-white/5 bg-white/[0.02] backdrop-blur-2xl">
         <div className="text-center mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold mb-2 tracking-wide text-white">Guest Registration</h1>
@@ -314,7 +353,7 @@ export default function VerifyPage() {
                   {error && <p className="text-red-400 text-sm text-center font-bold tracking-wide bg-red-500/10 py-3 rounded-xl border border-red-500/20">{error}</p>}
                   
                   <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-white to-gray-200 text-black py-4 rounded-xl font-bold uppercase tracking-widest flex justify-center items-center hover:scale-[0.98] transition-transform mt-6 shadow-[0_10px_30px_rgba(255,255,255,0.1)]">
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isAlreadyBookedMode ? "Fetch Entry Pass" : "Verify & Proceed")} <ArrowRight className="w-4 h-4 ml-2"/>
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isAlreadyBookedMode ? "Fetch Entry Pass" : "Verify Identity & Proceed")} <ArrowRight className="w-4 h-4 ml-2"/>
                   </button>
 
                   <div className="pt-5 border-t border-white/5 mt-5 text-center">
