@@ -358,7 +358,7 @@ export default function VerifyPage() {
                   {error && <p className="text-red-400 text-sm text-center font-bold tracking-wide bg-red-500/10 py-3 rounded-xl border border-red-500/20">{error}</p>}
                   
                   <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-white to-gray-200 text-black py-4 rounded-xl font-bold uppercase tracking-widest flex justify-center items-center hover:scale-[0.98] transition-transform mt-6 shadow-[0_10px_30px_rgba(255,255,255,0.1)]">
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isAlreadyBookedMode ? "Fetch Entry Pass" : "Verify Identity & Proceed")} <ArrowRight className="w-4 h-4 ml-2"/>
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isAlreadyBookedMode ? "Fetch Entry Pass" : "Verify & Proceed")} <ArrowRight className="w-4 h-4 ml-2"/>
                   </button>
 
                   <div className="pt-5 border-t border-white/5 mt-5 text-center">
