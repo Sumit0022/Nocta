@@ -1,10 +1,16 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo } from "react";
+export const dynamic = 'force-dynamic';
+
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import GlassCard from "@/components/atoms/GlassCard";
-import { QrCode, Copy, CheckCircle2, Loader2, UploadCloud, Crown, Users, ArrowRight, CreditCard, ShieldCheck, AlertCircle, ShoppingCart, GlassWater } from "lucide-react";
+import { QrCode, Copy, CheckCircle2, Loader2, UploadCloud, Crown, Users, ArrowRight, CreditCard, ShieldCheck, AlertCircle, ShoppingCart } from "lucide-react";
 import { toast } from "sonner"; 
+
+// 🚀 THE FIX: Importing Firebase directly to bypass API blockers
+import { db } from "@/lib/firebase";
+import { collection, getDocs } from "firebase/firestore/lite";
 
 function PaymentContent() {
   const router = useRouter();
@@ -18,7 +24,6 @@ function PaymentContent() {
   
   const [paymentError, setPaymentError] = useState("");
 
-  // 🚀 UPDATED: TableBooking now contains cart & finalAmount if present
   const [tableBooking, setTableBooking] = useState<any>(null);
   const [upiId, setUpiId] = useState("Loading...");
   const [qrCode, setQrCode] = useState("");
@@ -72,27 +77,31 @@ function PaymentContent() {
       }
     };
 
+    // 🚀 THE ULTIMATE FIX: Fetching Settings directly from DB
     const fetchSettings = async () => {
       try {
-        const res = await fetch('/api/admin/settings');
-        const result = await res.json();
-        if (result.success && Array.isArray(result.data)) {
-          const currentEvent = result.data.find((e: any) => e.eventId === eId);
-          if (currentEvent) {
-            setUpiId(currentEvent.upiId || "No UPI Set");
-            setQrCode(currentEvent.qrCode || "");
-            setEventPrices({ stag: Number(currentEvent.stagPrice) || 0, couple: Number(currentEvent.couplePrice) || 0 });
-            setPaymentMode(currentEvent.paymentMode || "manual");
-            return;
-          }
+        const eventsSnapshot = await getDocs(collection(db, "events"));
+        const fetchedEvents = eventsSnapshot.docs.map(doc => ({
+          eventId: doc.id,
+          ...doc.data()
+        }));
+        
+        const currentEvent: any = fetchedEvents.find((e: any) => e.eventId === eId);
+        
+        if (currentEvent) {
+          setUpiId(currentEvent.upiId || "No UPI Set");
+          setQrCode(currentEvent.qrCode || "");
+          setEventPrices({ stag: Number(currentEvent.stagPrice) || 0, couple: Number(currentEvent.couplePrice) || 0 });
+          setPaymentMode(currentEvent.paymentMode || "manual");
+          return;
         }
         setPaymentMode("manual");
       } catch (e) {
+        console.error("Failed to fetch settings directly from Firebase:", e);
         setPaymentMode("manual");
       }
     };
 
-    // 🚀 NEW: Safely parsing pendingTable including Cart Data
     const savedTable = localStorage.getItem("pendingTable");
     if (savedTable) {
       try { setTableBooking(JSON.parse(savedTable)); } catch (error) { console.error(error); }
@@ -144,7 +153,6 @@ function PaymentContent() {
     }
   };
 
-  // 🚀 FIXED CALCULATION: Now overrides with finalAmount if Cart exists
   let targetAmount = baseAmount; 
   if (tableBooking) {
     targetAmount = tableBooking.finalAmount || Number(tableBooking.table.minSpend);
@@ -161,13 +169,12 @@ function PaymentContent() {
     setPaymentError("");
     
     try {
-      // 🚀 INJECT CART DATA INTO PAYLOAD
       const payload = { 
         id: guestId, firstName, lastName, mobileNumber, eventId, entryType, isUpgrade, 
         previousAmount: previouslyPaid, amount: finalAmountToPay, screenshot, 
         tableId: tableBooking?.table?.id || null, isCaptain: !!tableBooking || entryType === "Group", 
         subOrdinates: tableBooking?.subOrdinates || [], partnerDetails: partnerData,
-        preOrders: tableBooking?.cart || [] // NEW FIELD
+        preOrders: tableBooking?.cart || [] 
       };
 
       const res = await fetch("/api/guest/payment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -201,13 +208,12 @@ function PaymentContent() {
         return;
       }
 
-      // 🚀 INJECT CART DATA INTO PAYLOAD
       const payload = { 
         id: guestId, firstName, lastName, mobileNumber, eventId, entryType, isUpgrade, 
         previousAmount: previouslyPaid, amount: finalAmountToPay, 
         tableId: tableBooking?.table?.id || null, isCaptain: !!tableBooking || entryType === "Group", 
         subOrdinates: tableBooking?.subOrdinates || [], partnerDetails: partnerData,
-        preOrders: tableBooking?.cart || [] // NEW FIELD
+        preOrders: tableBooking?.cart || [] 
       };
 
       const options = {
@@ -310,7 +316,6 @@ function PaymentContent() {
         </div>
       )}
 
-      {/* 🚀 NEW: Sleek Cart Summary if Pre-orders exist */}
       {tableBooking?.cart && tableBooking.cart.length > 0 && paymentMode !== "loading" && (
         <div className="mb-6 bg-white/[0.03] border border-white/10 rounded-xl p-4 text-left shadow-inner">
           <h3 className="text-white text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><ShoppingCart className="w-3.5 h-3.5 text-amber-500"/> Pre-Ordered Add-ons</h3>
