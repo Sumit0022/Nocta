@@ -14,11 +14,22 @@ export async function GET() {
       ...doc.data()
     }));
 
+    // 🚀 THE MASTER FIX: Universal Public Headers & Strict Anti-Cache
+    const publicHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    };
+
     // Agar events hain, toh saare bhej do. Agar nahi hain, toh empty array bhejo.
     if (events.length > 0) {
-      return NextResponse.json({ success: true, data: events });
+      return NextResponse.json({ success: true, data: events }, { headers: publicHeaders });
     }
-    return NextResponse.json({ success: true, data: [] });
+    return NextResponse.json({ success: true, data: [] }, { headers: publicHeaders });
+    
   } catch (error) {
     console.error("Fetch failed", error);
     return NextResponse.json({ success: false, error: "Fetch failed" }, { status: 500 });

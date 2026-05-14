@@ -9,14 +9,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import GlassCard from "@/components/atoms/GlassCard";
 import { ArrowRight, Loader2, KeyRound, CheckCircle2, Ticket, ChevronDown, Users, User, Crown, Info, Heart } from "lucide-react";
 
-// 🚀 FIREBASE IMPORTS
-import { auth } from "@/lib/firebase";
+// 🚀 THE FIX: Importing 'db' and 'getDocs' to fetch directly from Firebase
+import { auth, db } from "@/lib/firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+import { collection, getDocs } from "firebase/firestore/lite";
 
-// 🚀 BULLETPROOF DATE PARSER: Will NEVER return a fake past date. 
-const getEventStatus = (dateStr: string, timeStr: string) => {
-  if (!dateStr) return "Active"; 
-  
+// 🚀 SMART DATE PARSER: Handles DD-MM-YYYY, YYYY-MM-DD and AM/PM Time
+const parseEventDateStrict = (dateStr: string, timeStr: string) => {
+  if (!dateStr) return new Date();
   try {
     const parts = dateStr.split(/[-/]/);
     let year = new Date().getFullYear(), month = 1, day = 1;
@@ -43,54 +43,34 @@ const getEventStatus = (dateStr: string, timeStr: string) => {
       if (isPM && hours < 12) hours += 12;
       if (!isPM && hours === 12) hours = 0;
     }
-
-    const eventDateTime = new Date(year, month - 1, day, hours, minutes);
     
-    // 🚀 THE FIX: If date is invalid, don't guess. Just show the event!
-    if (isNaN(eventDateTime.getTime())) return "Active";
-
-    // 🚀 Lock and remove 6 Hours AFTER event start time
-    const lockTime = new Date(eventDateTime.getTime() + 6 * 60 * 60 * 1000);
-    return new Date() > lockTime ? "Completed" : "Active";
+    const parsedDate = new Date(year, month - 1, day, hours, minutes);
+    return isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
   } catch (e) {
-    return "Active"; // Absolute Failsafe: Never hide on error
+    return new Date(); // Failsafe
   }
+};
+
+const getEventStatus = (dateStr: string, timeStr: string) => {
+  if (!dateStr) return "Active"; 
+  const eventDateTime = parseEventDateStrict(dateStr, timeStr);
+  
+  // 🚀 Lock and remove 6 Hours AFTER event start time
+  const lockTime = new Date(eventDateTime.getTime() + 6 * 60 * 60 * 1000);
+  
+  if (isNaN(lockTime.getTime())) return "Active";
+  return new Date() > lockTime ? "Completed" : "Active";
 };
 
 const getSafeTime = (dateStr: string, timeStr: string) => {
   if (!dateStr) return 0;
-  try {
-    const parts = dateStr.split(/[-/]/);
-    let year = new Date().getFullYear(), month = 1, day = 1;
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        year = Number(parts[0]); month = Number(parts[1]); day = Number(parts[2]);
-      } else {
-        day = Number(parts[0]); month = Number(parts[1]); year = Number(parts[2]);
-        if (year < 100) year += 2000;
-      }
-    }
-    return new Date(year, month - 1, day).getTime();
-  } catch (e) {
-    return 0;
-  }
+  return parseEventDateStrict(dateStr, timeStr).getTime();
 };
 
 const formatEventDate = (dateStr: string) => {
   if (!dateStr) return "";
   try {
-    const parts = dateStr.split(/[-/]/);
-    let year = new Date().getFullYear(), month = 1, day = 1;
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        year = Number(parts[0]); month = Number(parts[1]); day = Number(parts[2]);
-      } else {
-        day = Number(parts[0]); month = Number(parts[1]); year = Number(parts[2]);
-        if (year < 100) year += 2000;
-      }
-    }
-    const d = new Date(year, month - 1, day);
-    if (isNaN(d.getTime())) return dateStr;
+    const d = parseEventDateStrict(dateStr, "00:00");
     return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   } catch (e) {
     return dateStr;
@@ -129,19 +109,18 @@ export default function VerifyPage() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        // 🚀 MOBILE-SAFE CACHE BUSTING: Removed strict headers that block mobile Safari/Chrome
-        const res = await fetch(`/api/admin/settings?t=${Date.now()}`, {
-          cache: 'no-store'
-        });
+        // 🚀 THE ULTIMATE FIX: Fetching Directly from DB, bypassing AdBlockers and caching!
+        const querySnapshot = await getDocs(collection(db, "events"));
+        const eventsData = querySnapshot.docs.map(doc => ({
+          eventId: doc.id,
+          ...doc.data()
+        }));
         
-        if (!res.ok) throw new Error("API Route Failed"); 
-        const result = await res.json();
-        
-        if (result.success && Array.isArray(result.data)) {
-          setAllEvents(result.data);
+        if (eventsData.length > 0) {
+          setAllEvents(eventsData);
         }
       } catch (err) {
-        console.error("Failed to fetch events", err);
+        console.error("Failed to fetch events directly from Firebase:", err);
       } finally {
         setEventsLoading(false);
       }
