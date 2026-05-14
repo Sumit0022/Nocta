@@ -13,7 +13,6 @@ import { ArrowRight, Loader2, KeyRound, CheckCircle2, Ticket, ChevronDown, Users
 import { auth } from "@/lib/firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
-// 🚀 THE MASTER FIX: Bulletproof Date Parser for Indian formats (DD-MM-YYYY or DD/MM/YYYY)
 const parseEventDateStrict = (dateStr: string, timeStr: string) => {
   if (!dateStr) return new Date();
   try {
@@ -47,7 +46,7 @@ const getEventStatus = (dateStr: string, timeStr: string) => {
   if (!dateStr || !timeStr) return "Active"; 
   const eventDateTime = parseEventDateStrict(dateStr, timeStr);
   
-  // 🚀 CHANGED: Locked and Removed after 6 Hours of event start time
+  // 🚀 Locked and Removed after 6 Hours of event start time
   const lockTime = new Date(eventDateTime.getTime() + 6 * 60 * 60 * 1000);
   return new Date() > lockTime ? "Completed" : "Active";
 };
@@ -110,7 +109,16 @@ export default function VerifyPage() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const res = await fetch('/api/admin/settings');
+        // 🚀 THE FIX: TRIPLE CACHE-BUSTING TECHNIQUE
+        const res = await fetch(`/api/admin/settings?t=${new Date().getTime()}`, {
+          cache: 'no-store', // Next.js level
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate', // Browser level
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        });
+        
         if (!res.ok) throw new Error("API Route Failed"); 
         const result = await res.json();
         if (result.success && Array.isArray(result.data)) setAllEvents(result.data);
