@@ -13,11 +13,14 @@ import { ArrowRight, Loader2, KeyRound, CheckCircle2, Ticket, ChevronDown, Users
 import { auth } from "@/lib/firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
+// 🚀 SMART DATE PARSER: Handles DD-MM-YYYY, YYYY-MM-DD and AM/PM Time
 const parseEventDateStrict = (dateStr: string, timeStr: string) => {
   if (!dateStr) return new Date();
   try {
     const parts = dateStr.split(/[-/]/);
     let year = new Date().getFullYear(), month = 1, day = 1;
+    
+    // Check format: YYYY-MM-DD or DD-MM-YYYY
     if (parts.length === 3) {
       if (parts[0].length === 4) {
         year = Number(parts[0]); month = Number(parts[1]); day = Number(parts[2]);
@@ -26,51 +29,52 @@ const parseEventDateStrict = (dateStr: string, timeStr: string) => {
         if (year < 100) year += 2000;
       }
     }
+
     let hours = 0, minutes = 0;
-    if (timeStr) {
-      if (timeStr.includes(':')) {
-         const timeParts = timeStr.split(':');
-         hours = Number(timeParts[0]); minutes = Number(timeParts[1]);
+    if (timeStr && timeStr !== "TBA") {
+      const isPM = timeStr.toLowerCase().includes("pm");
+      const cleanTime = timeStr.toLowerCase().replace(/(am|pm)/g, "").trim();
+      
+      if (cleanTime.includes(':')) {
+         const [h, m] = cleanTime.split(':');
+         hours = Number(h); minutes = Number(m);
       } else {
-         hours = Number(timeStr);
+         hours = Number(cleanTime);
       }
+      
+      if (isPM && hours < 12) hours += 12;
+      if (!isPM && hours === 12) hours = 0;
     }
+    
     const parsedDate = new Date(year, month - 1, day, hours, minutes);
     return isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
   } catch (e) {
-    return new Date();
+    return new Date(); // Failsafe
   }
 };
 
 const getEventStatus = (dateStr: string, timeStr: string) => {
-  if (!dateStr || !timeStr) return "Active"; 
+  if (!dateStr) return "Active"; 
   const eventDateTime = parseEventDateStrict(dateStr, timeStr);
   
-  // 🚀 Locked and Removed after 6 Hours of event start time
+  // 🚀 CUSTOMER PROTECTION: Remove after 6 Hours of event start time
   const lockTime = new Date(eventDateTime.getTime() + 6 * 60 * 60 * 1000);
+  
+  // If parsing failed (Invalid Date), keep it Active
+  if (isNaN(lockTime.getTime())) return "Active";
+  
   return new Date() > lockTime ? "Completed" : "Active";
 };
 
 const getSafeTime = (dateStr: string, timeStr: string) => {
-  if (!dateStr || !timeStr) return 0;
+  if (!dateStr) return 0;
   return parseEventDateStrict(dateStr, timeStr).getTime();
 };
 
 const formatEventDate = (dateStr: string) => {
   if (!dateStr) return "";
   try {
-    const parts = dateStr.split(/[-/]/);
-    let year = new Date().getFullYear(), month = 1, day = 1;
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        year = Number(parts[0]); month = Number(parts[1]); day = Number(parts[2]);
-      } else {
-        day = Number(parts[0]); month = Number(parts[1]); year = Number(parts[2]);
-        if (year < 100) year += 2000;
-      }
-    }
-    const d = new Date(year, month - 1, day);
-    if (isNaN(d.getTime())) return dateStr;
+    const d = parseEventDateStrict(dateStr, "00:00");
     return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   } catch (e) {
     return dateStr;
@@ -109,16 +113,11 @@ export default function VerifyPage() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        // 🚀 THE FIX: TRIPLE CACHE-BUSTING TECHNIQUE
-        const res = await fetch(`/api/admin/settings?t=${new Date().getTime()}`, {
-          cache: 'no-store', // Next.js level
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate', // Browser level
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          }
+        // 🚀 AGGRESSIVE CACHE-BUSTING
+        const res = await fetch(`/api/admin/settings?nocache=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
         });
-        
         if (!res.ok) throw new Error("API Route Failed"); 
         const result = await res.json();
         if (result.success && Array.isArray(result.data)) setAllEvents(result.data);
@@ -132,7 +131,11 @@ export default function VerifyPage() {
   }, []);
 
   const activeEvents = useMemo(() => {
-    const active = allEvents.filter(e => getEventStatus(e.eventDate, e.eventTime) === "Active");
+    // 🚀 BUSINESS FAILSAFE: If status check fails, don't hide the event
+    const active = allEvents.filter(e => {
+       const status = getEventStatus(e.eventDate, e.eventTime);
+       return status === "Active";
+    });
     active.sort((a, b) => getSafeTime(a.eventDate, a.eventTime) - getSafeTime(b.eventDate, b.eventTime));
     return active;
   }, [allEvents]);
@@ -361,7 +364,7 @@ export default function VerifyPage() {
                   {error && <p className="text-red-400 text-sm text-center font-bold tracking-wide bg-red-500/10 py-3 rounded-xl border border-red-500/20">{error}</p>}
                   
                   <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-white to-gray-200 text-black py-4 rounded-xl font-bold uppercase tracking-widest flex justify-center items-center hover:scale-[0.98] transition-transform mt-6 shadow-[0_10px_30px_rgba(255,255,255,0.1)]">
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isAlreadyBookedMode ? "Fetch Entry Pass" : "Verify Identity & Proceed")} <ArrowRight className="w-4 h-4 ml-2"/>
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isAlreadyBookedMode ? "Fetch Entry Pass" : "Verify & Proceed")} <ArrowRight className="w-4 h-4 ml-2"/>
                   </button>
 
                   <div className="pt-5 border-t border-white/5 mt-5 text-center">
