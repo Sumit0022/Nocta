@@ -1,0 +1,16 @@
+{
+  "name": "Nocta Gate",
+  "short_name": "Nocta",
+  "description": "Security and Event Management for Nocta.",
+  "start_url": "/security",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#f59e0b",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}
